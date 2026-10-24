@@ -1,0 +1,51 @@
+{
+  "description": "Sharp move with nothing public before it. Expected: Unknown. Fictional company and outlets, for demos and tests only.",
+  "move": {
+    "ticker": "ZENITHPOLY",
+    "move_start_at": "2026-10-22T11:15:00+05:30",
+    "window_minutes": 30,
+    "pct_change": 4.2,
+    "volume_multiple": 2.6,
+    "sector_pct_change": 0.3,
+    "index_pct_change": 0.1
+  },
+  "evidence": [
+    {
+      "id": "unk-media",
+      "investigator": "sherlock",
+      "source_tier": 2,
+      "verified": true,
+      "source_name": "Market Daily",
+      "url": "https://marketdaily.example/markets/zenith-poly-jumps",
+      "first_public_at": "2026-10-22T11:40:00+05:30",
+      "claim": "Zenith Polymers shares jump 4%; no announcement from the company",
+      "snippet": "Shares of Zenith Polymers rose over 4% in morning trade. The company has not made any disclosure to the exchanges."
+    },
+    {
+      "id": "unk-social",
+      "investigator": "echo",
+      "source_tier": 3,
+      "verified": false,
+      "source_name": "Public trading forum",
+      "url": "https://tradersforum.example/t/zenithpoly",
+      "first_public_at": "2026-10-22T11:31:00+05:30",
+      "claim": "Forum users speculate about a possible order win",
+      "snippet": "anyone know why ZENITHPOLY is flying? heard rumours of a big export order"
+    },
+    {
+      "id": "unk-blog",
+      "investigator": "echo",
+      "source_tier": 3,
+      "verified": false,
+      "source_name": "Stock blog",
+      "url": "https://stockblog.example/zenith-polymers-rally",
+      "first_public_at": null,
+      "claim": "Blog says Zenith Polymers may benefit from capacity expansion",
+      "snippet": "Zenith's new plant could be a trigger for the stock."
+    }
+  ],
+  "expected": {
+    "confidence_label": "Unknown",
+    "market_leads": false
+  }
+}

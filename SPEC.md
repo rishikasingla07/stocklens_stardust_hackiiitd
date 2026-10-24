@@ -172,6 +172,69 @@ leading explanation). They are deterministic.
 
 When the label is `Unknown`, the card says "Cause not confidently identified".
 
+## Consensus assumptions
+
+The models do not carry every input the rules need, so the engine uses these
+deterministic rules built only from existing fields. Tunables are in the
+"Consensus engine tunables" section at the bottom of `backend/config.py`.
+
+**Timing**
+- Accepted = `first_public_at` strictly before `move_start_at`. Equal counts
+  as late.
+- Gate 5: `first_public_at = None` is "missing timestamp". A timestamp of
+  exactly 00:00:00 IST on the move's own day is treated as date-only, so it is
+  "ambiguous" and excluded.
+- **Late corroboration:** a *verified Tier 2* report published after the move
+  began still counts as corroboration if its claim agrees with a *verified
+  Tier 1* source that was public before the move. A card limit notes this.
+  Tier 3 is never readmitted. (Needed so a filing at 09:48 plus media at
+  10:20 can corroborate each other.)
+- Skeptic evidence is not held to the before-the-move rule, because a denial
+  after the move still argues against the cause. It must still pass gate 5.
+
+**Independence**
+- An existing `independence_group` is always kept.
+- Otherwise two items share a group if they have the **same URL domain** (same
+  original source) **or near-duplicate snippets** (difflib ratio ≥ 0.85, same
+  wire story). Grouping is transitive, so ten syndicated copies are one group.
+- Two claims "agree" when the difflib ratio of their claims or snippets is ≥ 0.6.
+
+**Which evidence backs the leading explanation**
+- If the market leads (gate 4): Atlas evidence. Sherlock and Echo evidence
+  become alternatives.
+- Otherwise: Sherlock and Echo evidence. Atlas evidence becomes a "macro"
+  alternative.
+- The leading item is the lowest tier, then verified, then earliest.
+
+**Market context**
+- Share explained = same-direction sector (or index) move ÷ stock move, from
+  0 to 1, taking the larger of sector and index.
+- ≥ 0.6: market leads (gate 4). < 0.3: move is "unusual" (+15). Alternatives
+  read "sector weakness/strength: low | medium | high" using those bands.
+
+**Scoring rules**
+- *Primary source confirms*: a verified Tier 1 item in the leading evidence.
+- *Independent Tier 2 corroboration*: a verified Tier 2 item in a different
+  independence group from the Tier 1 items (or, with no Tier 1, from the
+  leading item).
+- *Timing*: at least one leading item is public before the move started.
+- *Filing and media agree*: a verified Tier 1 and a verified Tier 2 item agree.
+- *No stronger alternative*: there is leading evidence, no unresolved
+  counter-evidence, and (when the market leads) no verified Tier 1 company
+  filing.
+- **Partly anticipated**: Skeptic evidence published **before the earliest
+  leading evidence** is an earlier hint (−10). It is *not* counter-evidence.
+- **Unresolved Skeptic counter-evidence** (gate 6): every other Skeptic item.
+  The models have no "resolved" flag, so all of it counts as unresolved.
+
+**Gates**
+- Gates run in id order and only ever lower a label. When a cap lowers the
+  label, the score is cut to the top of that label's band (Medium → 74), with a
+  matching `score_breakdown` entry, so the breakdown always sums to the score.
+- Gate 1 and gate 3 count only the leading evidence.
+- Every gate that fires is listed in the card's `limits`.
+- If the label is Unknown, `leading_explanation` is None.
+
 ## Modes
 
 - `live` — investigators call TinyFish and the LLM for real.

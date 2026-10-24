@@ -1,0 +1,52 @@
+{
+  "description": "Sector-wide fall explains most of the move. Expected: market leads, Medium. Fictional company and outlets, for demos and tests only.",
+  "move": {
+    "ticker": "ORIONPHARMA",
+    "move_start_at": "2026-10-22T10:30:00+05:30",
+    "window_minutes": 60,
+    "pct_change": -2.6,
+    "volume_multiple": 1.8,
+    "sector_pct_change": -2.3,
+    "index_pct_change": -0.4
+  },
+  "evidence": [
+    {
+      "id": "mkt-media-1",
+      "investigator": "atlas",
+      "source_tier": 2,
+      "verified": true,
+      "source_name": "Market Daily",
+      "url": "https://marketdaily.example/markets/pharma-stocks-fall-tariff",
+      "first_public_at": "2026-10-22T09:20:00+05:30",
+      "claim": "Pharma stocks fall after the US proposes tariffs on imported generic drugs",
+      "snippet": "The pharma index fell over 2% in early trade after overnight reports that the US plans tariffs on imported generics."
+    },
+    {
+      "id": "mkt-media-2",
+      "investigator": "atlas",
+      "source_tier": 2,
+      "verified": true,
+      "source_name": "Dalal Ledger",
+      "url": "https://dalalledger.example/sectors/pharma-tariff-selloff",
+      "first_public_at": "2026-10-22T09:35:00+05:30",
+      "claim": "Indian drugmakers slide on US generic tariff proposal",
+      "snippet": "Export-heavy drugmakers led losses; analysts said the proposal could hit US generic margins across the sector."
+    },
+    {
+      "id": "mkt-social",
+      "investigator": "echo",
+      "source_tier": 3,
+      "verified": false,
+      "source_name": "Public trading forum",
+      "url": "https://tradersforum.example/t/pharma-tariffs",
+      "first_public_at": "2026-10-22T09:50:00+05:30",
+      "claim": "Traders say the whole pharma pack is down on tariff news",
+      "snippet": "entire pharma pack red today, tariff headlines"
+    }
+  ],
+  "expected": {
+    "confidence_label": "Medium",
+    "confidence_score": 50,
+    "market_leads": true
+  }
+}

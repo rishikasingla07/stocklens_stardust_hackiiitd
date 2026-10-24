@@ -1,0 +1,63 @@
+{
+  "description": "Company-specific guidance cut filed before the move. Expected: High, 90. Fictional company and outlets, for demos and tests only.",
+  "move": {
+    "ticker": "ACMEINFRA",
+    "move_start_at": "2026-10-22T10:02:00+05:30",
+    "window_minutes": 42,
+    "pct_change": -5.8,
+    "volume_multiple": 3.1,
+    "sector_pct_change": -0.7,
+    "index_pct_change": -0.2
+  },
+  "evidence": [
+    {
+      "id": "high-filing",
+      "investigator": "sherlock",
+      "source_tier": 1,
+      "verified": true,
+      "source_name": "NSE corporate filing",
+      "url": "https://www.nseindia.com/corporate-filings/acmeinfra-2026-10-22-guidance",
+      "first_public_at": "2026-10-22T09:48:00+05:30",
+      "claim": "ACME Infra revises FY27 revenue growth guidance down to 6-8% from 10-12%",
+      "snippet": "The Board has revised the revenue growth guidance for FY27 to 6-8% (earlier 10-12%) on account of delays in two large order executions."
+    },
+    {
+      "id": "high-media",
+      "investigator": "sherlock",
+      "source_tier": 2,
+      "verified": true,
+      "source_name": "Market Daily",
+      "url": "https://marketdaily.example/companies/acme-infra-guidance-cut",
+      "first_public_at": "2026-10-22T10:20:00+05:30",
+      "claim": "ACME Infra cuts FY27 revenue growth guidance to 6-8% from 10-12%",
+      "snippet": "In an exchange filing this morning, ACME Infra lowered its revenue growth outlook, citing slower execution on two large orders."
+    },
+    {
+      "id": "high-broker",
+      "investigator": "echo",
+      "source_tier": 3,
+      "verified": false,
+      "source_name": "Broker note shared on social",
+      "url": "https://brokerdesk.example/notes/acmeinfra-downgrade",
+      "first_public_at": "2026-10-22T10:34:00+05:30",
+      "claim": "Brokerage downgrades ACME Infra to Sell after guidance cut",
+      "snippet": "We downgrade to SELL, cutting our target price by 18% after the guidance revision."
+    },
+    {
+      "id": "high-hint",
+      "investigator": "skeptic",
+      "source_tier": 2,
+      "verified": true,
+      "source_name": "India Biz Wire",
+      "url": "https://indiabizwire.example/acme-infra-investor-call",
+      "first_public_at": "2026-10-15T16:10:00+05:30",
+      "claim": "ACME Infra management hinted at slower order execution on investor call",
+      "snippet": "Management said execution on a couple of large orders was 'running slower than we would like' this quarter."
+    }
+  ],
+  "expected": {
+    "confidence_label": "High",
+    "confidence_score": 90,
+    "market_leads": false
+  }
+}

@@ -76,3 +76,45 @@ GATES = [
     {"id": 6, "name": "unresolved_skeptic_counter", "effect": "cap", "label": "Medium",
      "description": "Unresolved Skeptic counter-evidence -> cap at Medium."},
 ]
+
+# --- Consensus engine tunables (backend/consensus/) -------------------------
+# See "Consensus assumptions" in SPEC.md for the rules these feed.
+
+# Human-readable names for score_breakdown entries, keyed like SCORING_POINTS.
+RULE_LABELS = {
+    "primary_source_confirms": "Primary source confirms",
+    "independent_tier2_corroboration": "Independent Tier 2 corroboration",
+    "timing_public_before_move": "Public before the move started",
+    "move_unusual_vs_sector_and_index": "Move is unusual versus sector and index",
+    "filing_and_media_agree": "Filing and media agree",
+    "no_stronger_alternative": "No stronger alternative explanation",
+    "partly_anticipated": "Partly anticipated (earlier hints)",
+}
+
+# Independence: two snippets at or above this difflib ratio are the same story.
+NEAR_DUPLICATE_SIMILARITY = 0.85
+
+# Two claims at or above this difflib ratio are treated as saying the same thing.
+CLAIM_AGREEMENT_SIMILARITY = 0.6
+
+# A verified Tier 2 report published after the move began may still count as
+# corroboration if it agrees with a verified Tier 1 source public before the move.
+ALLOW_LATE_TIER2_CORROBORATION = True
+
+# A timestamp of exactly 00:00:00 IST on the move's own day is treated as a
+# date-only (ambiguous) timestamp and excluded (gate 5).
+MIDNIGHT_ON_MOVE_DAY_IS_AMBIGUOUS = True
+
+# Market context: sector/index share of the move below this is "unusual" (+15).
+UNUSUAL_MOVE_MAX_MARKET_SHARE = 0.3
+
+# Bands for the "sector weakness: low/medium/high" alternatives text.
+MARKET_SHARE_LEVELS = [
+    ("high", MARKET_EXPLAINS_THRESHOLD),
+    ("medium", UNUSUAL_MOVE_MAX_MARKET_SHARE),
+    ("low", 0.0),
+]
+
+CARD_LIMITS = [
+    "An attribution backed by evidence, not proof of causation. Not investment advice.",
+]
