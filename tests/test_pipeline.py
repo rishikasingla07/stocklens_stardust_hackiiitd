@@ -19,7 +19,14 @@ def test_high_case_with_challenge_is_high_90():
     assert card.leading_explanation.startswith("ACME Infra revises FY27")
 
 
-def test_high_case_without_challenge_has_no_hint_penalty():
+def test_high_case_default_run_includes_earlier_hint():
+    # DEFAULT_INCLUDE_EARLIER_HINTS: the default run keeps the -10 earlier hint.
+    card = pipeline.live_card("ACMEINFRA")
+    assert (card.confidence_label, card.confidence_score) == ("High", 90)
+
+
+def test_high_case_without_earlier_hints_has_no_hint_penalty(monkeypatch):
+    monkeypatch.setattr(config, "DEFAULT_INCLUDE_EARLIER_HINTS", False)
     card = pipeline.live_card("ACMEINFRA")
     assert (card.confidence_label, card.confidence_score) == ("High", 100)
 
@@ -48,10 +55,13 @@ def test_echo_in_cards_is_tier3_unverified():
         assert echo and all(e.source_tier == 3 and not e.verified for e in echo)
 
 
-def test_skeptic_only_runs_when_requested():
+def test_full_skeptic_only_runs_when_requested(monkeypatch):
     move = replay.find_case("ACMEINFRA")[1]
     default = pipeline.run_investigators(move)
-    assert [r.investigator for r in default] == ["atlas", "sherlock", "echo"]
+    assert [r.investigator for r in default] == ["atlas", "sherlock", "echo", "skeptic"]
+    assert "earlier-hint lookup only" in default[-1].notes
+    monkeypatch.setattr(config, "DEFAULT_INCLUDE_EARLIER_HINTS", False)
+    assert [r.investigator for r in pipeline.run_investigators(move)] == ["atlas", "sherlock", "echo"]
     challenged = pipeline.run_investigators(move, include_skeptic=True)
     assert [r.investigator for r in challenged] == ["atlas", "sherlock", "echo", "skeptic"]
 

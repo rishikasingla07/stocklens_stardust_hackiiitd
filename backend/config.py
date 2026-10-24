@@ -132,7 +132,6 @@ TRIGGER_MIN_VOLUME_MULTIPLE = 1.5
 # Window length used when the caller does not give one.
 TRIGGER_DEFAULT_WINDOW_MINUTES = 30
 
-<<<<<<< HEAD
 # --- LLM settings (backend/llm/) ---------------------------------------------
 # LLM_API_KEY is read in the Runtime section above. Empty key = offline
 # templates only (explain) and no extraction.
@@ -149,7 +148,7 @@ LLM_TIMEOUT_SECONDS = 60
 
 # Output token ceiling per call (includes thinking tokens on models that think).
 LLM_MAX_TOKENS = 16000
-=======
+
 # --- Investigators, TinyFish and pipeline tunables ---------------------------
 # (backend/investigators/, backend/tinyfish/, backend/pipeline.py)
 
@@ -163,4 +162,9 @@ EXCHANGE_FILING_DOMAINS = ("nseindia.com", "bseindia.com")
 
 # Replay mode reads fixtures/<case>/<this folder>/<investigator>.json.
 REPLAY_SUBDIR = "tinyfish"
->>>>>>> 0adbfb46357cf63cd319690253042e136c1c400b
+
+# Default investigations (no "Challenge This") also run the Skeptic's
+# earlier-hint lookup: Skeptic items public before the move started. These
+# score "partly anticipated" (-10), so ACMEINFRA is High 90, not 100. The full
+# Skeptic (counter-evidence) still runs only on "Challenge This".
+DEFAULT_INCLUDE_EARLIER_HINTS = True

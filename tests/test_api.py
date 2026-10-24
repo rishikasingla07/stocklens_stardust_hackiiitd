@@ -10,6 +10,13 @@ from backend import config
 
 client = TestClient(app_module.app)
 
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """Replay data and no LLM key: explanations come from the offline template."""
+    monkeypatch.setattr(config, "MODE", "replay")
+    monkeypatch.setattr(config, "LLM_API_KEY", "")
+
 CASES = ["case_high", "case_unknown", "case_market_wide"]
 
 
@@ -46,6 +53,42 @@ def test_investigate_matches_fixture_expectation(case):
     assert card["confidence_label"] == data["expected"]["confidence_label"]
     if "confidence_score" in data["expected"]:
         assert card["confidence_score"] == data["expected"]["confidence_score"]
+    assert card["explanation_text"].strip()
+
+
+def test_investigate_demo_cases():
+    acme = client.post("/investigate/ACMEINFRA").json()
+    assert (acme["confidence_label"], acme["confidence_score"]) == ("High", 90)
+    assert client.post("/investigate/ZENITHPOLY").json()["confidence_label"] == "Unknown"
+    orion = client.post("/investigate/ORIONPHARMA").json()
+    assert orion["leading_explanation"].startswith("Market explanation leads")
+
+
+def test_llm_failure_falls_back_to_offline_explanation(monkeypatch):
+    from backend.llm import explain
+    from backend.llm.client import LLMError
+
+    def broken(*args, **kwargs):
+        raise LLMError("boom")
+    monkeypatch.setattr(config, "LLM_API_KEY", "set-but-broken")
+    monkeypatch.setattr(explain, "complete", broken)
+    card = client.post("/investigate/ACMEINFRA").json()
+    assert card["explanation_text"] == explain.offline_explanation(
+        app_module.Card.model_validate(card))
+
+
+def test_unexpected_explain_error_falls_back_silently(monkeypatch):
+    def crash(card, tone="plain"):
+        raise RuntimeError("unexpected")
+    monkeypatch.setattr(app_module, "fill_explanation", crash)
+    r = client.post("/investigate/ACMEINFRA")
+    assert r.status_code == 200 and r.json()["explanation_text"].strip()
+
+
+def test_fixture_path_is_fallback_when_pipeline_has_no_case(monkeypatch):
+    monkeypatch.setattr(app_module.pipeline, "live_card", lambda ticker, include_skeptic=False: None)
+    card = client.post("/investigate/ACMEINFRA").json()
+    assert card["confidence_score"] == 90 and card["explanation_text"].strip()
 
 
 def test_investigate_is_case_insensitive():
@@ -81,10 +124,21 @@ def test_receipt_without_fixture_is_404():
     assert client.get("/receipt/TCS").status_code == 404
 
 
-def test_challenge_placeholder():
+def test_challenge_returns_card_with_skeptic():
     r = client.post("/challenge/ACMEINFRA")
     assert r.status_code == 200
-    assert "Skeptic runs once the investigators are connected" in r.json()["message"]
+    card = r.json()
+    investigate = client.post("/investigate/ACMEINFRA").json()
+    assert card.keys() == investigate.keys()
+    assert (card["confidence_label"], card["confidence_score"]) == ("High", 90)
+    assert any(e["investigator"] == "skeptic" for e in card["accepted_evidence"])
+    assert card["explanation_text"].strip()
+
+
+def test_challenge_without_case_is_same_404_as_investigate():
+    r = client.post("/challenge/TCS")
+    assert r.status_code == 404
+    assert r.json() == client.post("/investigate/TCS").json()
 
 
 def test_card_source_can_be_swapped(monkeypatch):

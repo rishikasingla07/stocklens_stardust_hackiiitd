@@ -1,8 +1,10 @@
 """FastAPI app: API routes and the static frontend."""
 
 import json
+import logging
 from collections.abc import Callable
 from datetime import datetime
+from functools import partial
 from html import escape
 from pathlib import Path
 
@@ -10,9 +12,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend import config
+from backend import config, pipeline
 from backend.consensus.engine import build_card
+from backend.llm.explain import fill_explanation, offline_explanation
 from backend.models import IST, Card, Evidence, Move
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="StockLens")
 app.mount("/static", StaticFiles(directory=config.FRONTEND_DIR), name="static")
@@ -60,14 +65,29 @@ def fixture_card(ticker: str) -> Card | None:
     return build_card(move, evidence)
 
 
-# Swap point: replace with the live pipeline later (same signature,
-# ticker -> Card | None). The routes and frontend do not change.
-card_source: Callable[[str], Card | None] = fixture_card
+def with_explanation(card: Card) -> Card:
+    """Fill explanation_text: LLM if usable, otherwise the offline template, silently."""
+    try:
+        return fill_explanation(card)
+    except Exception as exc:  # any LLM-side failure must not break the card
+        log.info("explanation: using offline text (%s)", exc)
+        return card.model_copy(update={"explanation_text": offline_explanation(card)})
 
 
-def get_card(ticker: str) -> Card:
+def pipeline_card(ticker: str, include_skeptic: bool = False) -> Card | None:
+    """Pipeline Card with explanation_text filled; the fixture path is the fallback."""
+    card = pipeline.live_card(ticker, include_skeptic=include_skeptic) or fixture_card(ticker)
+    return with_explanation(card) if card is not None else None
+
+
+# Swap points (ticker -> Card | None). The routes and frontend do not change.
+card_source: Callable[[str], Card | None] = pipeline_card
+challenge_source: Callable[[str], Card | None] = partial(pipeline_card, include_skeptic=True)
+
+
+def get_card(ticker: str, source: Callable[[str], Card | None] | None = None) -> Card:
     """The one place routes get a Card from. Raises 404 if no investigation exists."""
-    card = card_source(ticker.upper())
+    card = (source or card_source)(ticker.upper())
     if card is None:
         raise HTTPException(
             status_code=404,
@@ -131,12 +151,9 @@ def receipt(ticker: str, format: str = "json") -> JSONResponse | HTMLResponse:
 
 
 @app.post("/challenge/{ticker}")
-def challenge(ticker: str) -> dict:
-    return {
-        "ticker": ticker.upper(),
-        "status": "not_connected",
-        "message": "Skeptic runs once the investigators are connected.",
-    }
+def challenge(ticker: str) -> Card:
+    """Re-run the investigation with the full Skeptic. Same Card shape as /investigate."""
+    return get_card(ticker, challenge_source)
 
 
 # --- Receipt HTML ------------------------------------------------------------

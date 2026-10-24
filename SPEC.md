@@ -86,7 +86,8 @@ Investigators gather evidence only (via TinyFish). They never score or decide.
 - **Question:** what argues against the leading cause?
 - **Does:** hunts for denials, conflicts and earlier mentions.
 - **TinyFish tools:** Search, Fetch.
-- **Runs:** only when the user taps **"Challenge This"**.
+- **Runs:** in full only when the user taps **"Challenge This"**. Default
+  investigations run only its earlier-hint lookup (see Consensus assumptions).
 - **Hands over:** counter-evidence, or a clean "none found".
 
 ### TinyFish Monitor (not an investigator)
@@ -226,6 +227,16 @@ deterministic rules built only from existing fields. Tunables are in the
   leading evidence** is an earlier hint (−10). It is *not* counter-evidence.
 - **Unresolved Skeptic counter-evidence** (gate 6): every other Skeptic item.
   The models have no "resolved" flag, so all of it counts as unresolved.
+- **Earlier hints in the default run** (`DEFAULT_INCLUDE_EARLIER_HINTS` in
+  `config.py`, default on): the "partly anticipated" −10 only exists if Skeptic
+  evidence is in the run, and the full Skeptic runs only on "Challenge This".
+  So a default investigation also runs the Skeptic's **earlier-hint lookup**:
+  it keeps only Skeptic items public **before the move started** and drops the
+  rest. That is why ACMEINFRA scores High 90 (not 100) without a challenge.
+  The full Skeptic (denials, conflicts, post-move items) still runs only on
+  "Challenge This". Edge case: a pre-move Skeptic item that is *not* earlier
+  than the leading evidence counts as counter-evidence (gate 6) even in the
+  default run. Set the flag to False to get the old default (no Skeptic at all).
 
 **Gates**
 - Gates run in id order and only ever lower a label. When a cap lowers the

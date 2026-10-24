@@ -7,6 +7,7 @@ event loop; async callers can await investigate() directly.
 
 import asyncio
 
+from backend import config
 from backend.consensus.engine import build_card_from_reports
 from backend.investigators.atlas import Atlas
 from backend.investigators.echo import Echo
@@ -19,14 +20,18 @@ from backend.tinyfish.client import TinyFishClient
 
 async def investigate(move: Move, include_skeptic: bool = False,
                       client: TinyFishClient | None = None) -> list[Report]:
-    """Run Atlas, Sherlock and Echo in parallel; Skeptic only if requested.
+    """Run Atlas, Sherlock and Echo in parallel; the full Skeptic only if requested.
 
-    All investigators share one client, so they share one TinyFish call budget.
+    Without a challenge, config.DEFAULT_INCLUDE_EARLIER_HINTS adds the Skeptic's
+    earlier-hint lookup only. All investigators share one client, so they share
+    one TinyFish call budget.
     """
     client = client or TinyFishClient()
     investigators = [Atlas(client), Sherlock(client), Echo(client)]
     if include_skeptic:
         investigators.append(Skeptic(client, requested=True))
+    elif config.DEFAULT_INCLUDE_EARLIER_HINTS:
+        investigators.append(Skeptic(client, earlier_hints_only=True))
     return list(await asyncio.gather(*(i.run(move) for i in investigators)))
 
 

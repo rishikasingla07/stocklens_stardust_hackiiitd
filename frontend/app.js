@@ -451,16 +451,42 @@ function downloadReceipt(ticker) {
   a.remove();
 }
 
+/** What the Skeptic found in a challenged Card: counter-evidence, else "none found". */
+function skepticFindingHtml(card, before) {
+  const prefix = "counter-evidence: ";
+  const counter = card.alternatives.filter((a) => a.startsWith(prefix)).map((a) => a.slice(prefix.length));
+  const counterSet = new Set(counter);
+  const hints = card.accepted_evidence.filter((e) => e.investigator === "skeptic" && !counterSet.has(e.claim));
+  let html = counter.length
+    ? `<strong>Skeptic found ${counter.length} item(s) arguing against this cause:</strong>
+       <ul class="plain-list">${counter.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`
+    : `<strong>Skeptic:</strong> none found. No denials or conflicting reports.`;
+  if (hints.length) {
+    html += `<div class="muted">Earlier hint already counted (−10): ${hints.map((e) => esc(e.claim)).join("; ")}</div>`;
+  }
+  if (before && (before.confidence_label !== card.confidence_label || before.confidence_score !== card.confidence_score)) {
+    html += `<div>Confidence changed: ${esc(before.confidence_label)} ${esc(before.confidence_score)}
+      → ${esc(card.confidence_label)} ${esc(card.confidence_score)}</div>`;
+  } else {
+    html += `<div class="muted">Confidence unchanged: ${esc(card.confidence_label)} ${esc(card.confidence_score)}/100.</div>`;
+  }
+  return html;
+}
+
 async function challenge(ticker, button) {
-  const out = $("#challenge-result");
   button.disabled = true;
+  const before = state.card;
   try {
-    const res = await api("POST", `/challenge/${encodeURIComponent(ticker)}`);
-    out.innerHTML = `<strong>Skeptic:</strong> ${esc(res.message)}
-      ${res.status ? `<span class="tag">${esc(res.status)}</span>` : ""}`;
+    // /challenge returns a full Card (same shape as /investigate) with the Skeptic included.
+    const card = await api("POST", `/challenge/${encodeURIComponent(ticker)}`);
+    state.card = card;
+    renderCard(card);
+    const out = $("#challenge-result");
+    out.innerHTML = skepticFindingHtml(card, before);
+    out.hidden = false;
   } catch (err) {
+    const out = $("#challenge-result");
     out.innerHTML = `<span class="reason">Challenge failed: ${esc(err.message)}</span>`;
-  } finally {
     out.hidden = false;
     button.disabled = false;
   }
