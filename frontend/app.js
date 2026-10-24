@@ -235,9 +235,13 @@ function explanationBlock(card) {
       ? rejected.map((r) => `<li><strong>${esc(r.evidence.source_name)}</strong>: ${esc(r.evidence.claim)}
           <br><span class="reason">Why it failed: ${esc(r.reason)}</span></li>`).join("")
       : `<li>No evidence was found.</li>`;
+    // The heading already says UNKNOWN_TEXT, so drop it from the start of explanation_text.
+    const explanation = (card.explanation_text || "").trim().replace(new RegExp(`^${UNKNOWN_TEXT}\\.?\\s*`), "");
     return `<section class="panel unknown-card">
       <h2>${esc(UNKNOWN_TEXT)}</h2>
-      <p>No evidence that was public before the move explains it. Here is what we found and why each item failed:</p>
+      ${explanation ? `<p class="explanation">${esc(explanation)}</p>` : ""}
+      <p class="unknown-intro">${explanation ? "Why each item failed:"
+        : "No evidence that was public before the move explains it. Here is what we found and why each item failed:"}</p>
       <ul class="plain-list">${rows}</ul>
       ${actionsBlock(card)}
     </section>`;

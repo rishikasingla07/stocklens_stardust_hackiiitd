@@ -249,6 +249,8 @@ button.stock-row:hover { background: var(--surface-2); }
   border: 2px solid var(--amber);
 }
 .unknown-card h2 { color: var(--amber); font-size: 1.6rem; }
+.unknown-card .explanation { margin-bottom: 1rem; }
+.unknown-intro { font-weight: 700; margin: 0 0 0.4rem; }
 
 .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.25rem; }
 .btn {
