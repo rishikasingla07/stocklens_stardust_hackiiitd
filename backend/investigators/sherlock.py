@@ -6,37 +6,20 @@ TinyFish tools: Search, Agent, Fetch, Browser.
 Hands over: filing text, quoted snippet and official timestamp.
 Filings are Tier 1; company news is Tier 2.
 
-Live path (MODE=live): one Search for filings around the move day, one Fetch
-of up to SHERLOCK_MAX_FETCHES exchange-domain pages, then LLM extraction of
-each page. Pages without a timestamp are skipped. Never invents evidence.
+Live path (MODE=live), TinyFish key only, no LLM key: one Search for filings
+around the move day, then for up to SHERLOCK_MAX_AGENT_PAGES exchange-domain
+results one Agent call to read the page and one Fetch to verify the quoted
+snippet (backend/tinyfish/extract_agent.py). Pages without a usable timestamp
+are rejected. Never invents evidence.
 """
 
-import asyncio
-import hashlib
 from datetime import timedelta
-from urllib.parse import urlparse
 
 from backend import config
 from backend.investigators.base import Investigator
-from backend.llm.extract import extract_evidence
 from backend.models import Evidence, Move, Report
 from backend.tinyfish.client import CallBudgetExceeded, TinyFishClient, TinyFishError
-
-
-def is_exchange_filing(url: str) -> bool:
-    """True if the URL is on an exchange filing domain (e.g. nseindia.com)."""
-    host = (urlparse(url).hostname or "").lower()
-    return any(host == d or host.endswith("." + d) for d in config.EXCHANGE_FILING_DOMAINS)
-
-
-def filing_source_name(url: str) -> str:
-    """'NSE corporate filing' or 'BSE corporate filing', from the URL's domain."""
-    host = (urlparse(url).hostname or "").lower()
-    return "BSE corporate filing" if "bseindia" in host else "NSE corporate filing"
-
-
-def _evidence_id(url: str) -> str:
-    return "sherlock-live-" + hashlib.sha1(url.encode()).hexdigest()[:10]
+from backend.tinyfish.extract_agent import extract_filing, is_exchange_filing
 
 
 class Sherlock(Investigator):
@@ -48,21 +31,21 @@ class Sherlock(Investigator):
         self.company = company  # search by company name if given, else by ticker
 
     async def gather_live(self, move: Move) -> Report:
-        """Search, fetch and extract real exchange filings. Always returns a Report, never raises."""
+        """Search for filings, then read each with the Agent. Always returns a Report, never raises."""
         if not self.client.has_key:
             return Report(investigator=self.name,
                           notes="live: TINYFISH_API_KEY not set; no evidence gathered")
         evidence: list[Evidence] = []
         notes: list[str] = []
         try:
-            await self._search_fetch_extract(move, evidence, notes)
+            await self._search_and_extract(move, evidence, notes)
         except (TinyFishError, CallBudgetExceeded) as exc:
             notes.append(f"live stopped: {exc}")
         notes.append(f"calls used {self.client.budget.used}/{self.client.budget.limit}")
         return Report(investigator=self.name, evidence=evidence, notes="; ".join(notes))
 
-    async def _search_fetch_extract(self, move: Move, evidence: list[Evidence],
-                                    notes: list[str]) -> None:
+    async def _search_and_extract(self, move: Move, evidence: list[Evidence],
+                                  notes: list[str]) -> None:
         name = self.company or move.ticker
         day = move.move_start_at.date()
         found = await self.client.search(
@@ -74,33 +57,28 @@ class Sherlock(Investigator):
         results = found.get("results") or []
         urls = list(dict.fromkeys(r["url"] for r in results
                                   if r.get("url") and is_exchange_filing(r["url"])))
-        to_fetch = urls[:config.SHERLOCK_MAX_FETCHES]
+        pages = urls[:config.SHERLOCK_MAX_AGENT_PAGES]
         notes.append(f"live: {len(results)} search result(s), {len(urls)} on exchange domains")
-        if not to_fetch:
-            notes.append("no exchange filing found to fetch")
+        if not pages:
+            notes.append("no exchange filing found to read")
             return
 
-        fetched = await self.client.fetch(
-            to_fetch, purpose=f"Read the filing text and its official timestamp for {name}.")
-        pages = fetched.get("results") or []
-        errors = fetched.get("errors") or []
-        rejected = 0
-        for page in pages:
-            url = page.get("final_url") or page.get("url") or ""
-            text = page.get("text") or ""
-            if not text.strip() or not is_exchange_filing(url):
-                rejected += 1  # empty page, or redirected off the exchange
-                continue
-            item = await asyncio.to_thread(
-                extract_evidence, "filing", text, name, move,
-                filing_source_name(url), url, _evidence_id(url), self.name)
-            if item is None:
-                rejected += 1  # no timestamp, nothing relevant, or LLM unavailable
-            else:
-                evidence.append(item)
-        notes.append(f"fetched {len(pages)} of {len(to_fetch)} page(s), {len(errors)} fetch "
-                     f"error(s), rejected {rejected} (no timestamp, not relevant or unreadable), "
-                     f"kept {len(evidence)}")
+        rejected: list[str] = []
+        try:
+            for url in pages:
+                try:
+                    result = await extract_filing(self.client, url, name, move)
+                except TinyFishError as exc:
+                    rejected.append(f"{url}: {exc}")
+                    continue
+                if result.evidence is None:
+                    rejected.append(f"{url}: {result.reason}")
+                else:
+                    evidence.append(result.evidence)
+        finally:
+            notes.append(f"pages found {len(pages)}, extracted {len(evidence)}, "
+                         f"rejected {len(rejected)}")
+            notes.extend(f"rejected {r}" for r in rejected)
 
     def enforce(self, evidence: Evidence) -> Evidence | None:
         """Exchange filings are Tier 1; everything else Sherlock finds is company news, Tier 2."""

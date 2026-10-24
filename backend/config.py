@@ -189,3 +189,21 @@ TINYFISH_CACHE_DIR = FIXTURES_DIR / "live_cache"
 # most this many pages on EXCHANGE_FILING_DOMAINS.
 SHERLOCK_LOOKBACK_DAYS = 2
 SHERLOCK_MAX_FETCHES = 2
+
+# TinyFish Agent (docs.tinyfish.ai/agent-api.md): synchronous run endpoint.
+TINYFISH_AGENT_URL = "https://agent.tinyfish.ai/v1/automation/run"
+
+# Client timeout for one Agent run. Synchronous runs cannot be cancelled, so we
+# also ask TinyFish to stop the run itself a little earlier (max_duration_seconds).
+TINYFISH_AGENT_TIMEOUT_SECONDS = 60
+TINYFISH_AGENT_MAX_DURATION_SECONDS = 55
+
+# Live Sherlock (Agent path): at most this many exchange-domain pages are read
+# with the Agent. Each page costs one Agent call plus one Fetch (to verify).
+SHERLOCK_MAX_AGENT_PAGES = 2
+
+# Exchange pages (EXCHANGE_FILING_DOMAINS) print filing times without a time
+# zone, e.g. "22-Oct-2026 09:48:00"; the exchanges publish in IST. True: read
+# such times as IST. False: reject any time without an explicit time zone.
+# Times on other sites are always rejected without an explicit time zone.
+EXCHANGE_PAGE_TIMES_ARE_IST = True

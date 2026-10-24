@@ -12,8 +12,10 @@ from backend import config
 from backend.investigators import sherlock as sherlock_module
 from backend.investigators.sherlock import Sherlock
 from backend.models import IST, Evidence, Move
-from backend.tinyfish import cache
-from backend.tinyfish.client import CallBudget, CallBudgetExceeded, TinyFishClient, TinyFishError
+from backend.tinyfish import cache, extract_agent
+from backend.tinyfish.client import (CallBudget, CallBudgetExceeded, TinyFishClient, TinyFishError,
+                                     agent_answer)
+from backend.tinyfish.extract_agent import extract_filing_with_agent, parse_published_at
 
 FAKE_KEY = "test-key-not-real"
 MOVE = Move(ticker="ACMEINFRA", move_start_at=datetime(2026, 10, 22, 10, 2, tzinfo=IST),
@@ -24,10 +26,24 @@ BSE_URL = "https://www.bseindia.com/xml-data/corpfiling/AttachLive/acme.pdf"
 NEWS_URL = "https://marketdaily.example/acme"
 
 
-class FakeTinyFish:
-    """httpx handler that answers search and fetch like the documented API, and records calls."""
+SNIPPET = "The Board has revised the revenue growth guidance for FY27 to 6-8%"
 
-    def __init__(self, search_results=None, fetch_results=None, status=200):
+
+def agent_result(url: str, **overrides) -> dict:
+    """What the Agent reads off a filing page (documented /run COMPLETED shape)."""
+    answer = {"claim": "ACME Infra revises FY27 revenue growth guidance",
+              "published_at": "22-Oct-2026 09:48:00", "source_name": "NSE", "snippet": SNIPPET}
+    answer.update(overrides)
+    return {"run_id": "run-1", "status": "COMPLETED", "started_at": "2026-10-24T10:00:00Z",
+            "finished_at": "2026-10-24T10:00:20Z", "num_of_steps": 3, "result": answer,
+            "error": None}
+
+
+class FakeTinyFish:
+    """httpx handler that answers search, fetch and agent like the documented APIs, and records calls."""
+
+    def __init__(self, search_results=None, fetch_results=None, status=200,
+                 agent_responses=None, fetch_status=200):
         self.requests: list[httpx.Request] = []
         self.search_results = search_results if search_results is not None else [
             {"position": 1, "title": "Filing", "url": FILING_URL, "snippet": "..."},
@@ -36,12 +52,23 @@ class FakeTinyFish:
         ]
         self.fetch_results = fetch_results
         self.status = status
+        self.agent_responses = agent_responses or {}  # url -> /run response body
+        self.fetch_status = fetch_status
+
+    def calls(self, host: str) -> list[httpx.Request]:
+        return [r for r in self.requests if r.url.host == host]
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if self.status != 200:
             return httpx.Response(self.status, json={"error": {
                 "code": "INSUFFICIENT_CREDITS", "message": "Wallet balance too low"}})
+        if request.url.host == "agent.tinyfish.ai":
+            url = json.loads(request.content)["url"]
+            return httpx.Response(200, json=self.agent_responses.get(url, agent_result(url)))
+        if request.url.host == "api.fetch.tinyfish.ai" and self.fetch_status != 200:
+            return httpx.Response(self.fetch_status, json={"error": {"code": "INTERNAL_ERROR",
+                                                                     "message": "boom"}})
         if request.url.host == "api.search.tinyfish.ai":
             return httpx.Response(200, json={"query": request.url.params["query"],
                                              "results": self.search_results,
@@ -49,7 +76,8 @@ class FakeTinyFish:
         urls = json.loads(request.content)["urls"]
         results = self.fetch_results if self.fetch_results is not None else [
             {"url": u, "final_url": u, "title": "t", "format": "markdown",
-             "text": f"Filing text for {u}. Date: 22-Oct-2026 09:48:00"} for u in urls]
+             "text": f"Filing text for {u}. Date: 22-Oct-2026 09:48:00. {SNIPPET} on account of "
+                     "delays."} for u in urls]
         return httpx.Response(200, json={"results": results, "errors": []})
 
 
@@ -148,34 +176,169 @@ def test_timeout_is_a_clear_error(tmp_path):
         asyncio.run(client.fetch(FILING_URL))
 
 
-# --- live Sherlock -----------------------------------------------------------
+# --- agent() -------------------------------------------------------------------
+
+def test_agent_posts_documented_body_and_header(tmp_path):
+    client, fake = make_client(tmp_path)
+    answer = asyncio.run(client.agent(FILING_URL, "read it", output_schema={"type": "object"}))
+    [req] = fake.requests
+    assert req.method == "POST" and str(req.url) == config.TINYFISH_AGENT_URL
+    assert req.headers["X-API-Key"] == FAKE_KEY
+    body = json.loads(req.content)
+    assert (body["url"], body["goal"], body["output_schema"]) == (FILING_URL, "read it", {"type": "object"})
+    assert body["agent_config"] == {"max_duration_seconds": config.TINYFISH_AGENT_MAX_DURATION_SECONDS}
+    assert answer["published_at"] == "22-Oct-2026 09:48:00"
+
+
+def test_agent_answer_object_result():
+    assert agent_answer({"status": "COMPLETED", "result": {"claim": "c"}}) == {"claim": "c"}
+
+
+def test_agent_answer_under_result_result():
+    assert agent_answer({"status": "COMPLETED", "result": {"result": {"claim": "c"}}}) == {"claim": "c"}
+    assert agent_answer({"status": "COMPLETED", "result": {"result": '{"claim": "c"}'}}) == {"claim": "c"}
+
+
+def test_agent_answer_rejects_failed_or_non_object():
+    with pytest.raises(TinyFishError, match="FAILED: SITE_BLOCKED: blocked"):
+        agent_answer({"status": "FAILED", "result": None,
+                      "error": {"code": "SITE_BLOCKED", "message": "blocked", "category": "AGENT_FAILURE"}})
+    with pytest.raises(TinyFishError, match="no JSON object"):
+        agent_answer({"status": "COMPLETED", "result": {"result": "just text"}})
+
+
+def test_failed_agent_run_is_not_cached(tmp_path):
+    failed = {"run_id": "r", "status": "FAILED", "result": None,
+              "error": {"code": "TASK_FAILED", "message": "no", "category": "AGENT_FAILURE"}}
+    client, fake = make_client(tmp_path, fake=FakeTinyFish(agent_responses={FILING_URL: failed}))
+    with pytest.raises(TinyFishError):
+        asyncio.run(client.agent(FILING_URL, "g"))
+    assert list((tmp_path / "cache").glob("*.json")) == []
+
+
+def test_agent_cache_stops_a_repeat_call(tmp_path):
+    client, fake = make_client(tmp_path)
+    first = asyncio.run(client.agent(FILING_URL, "same goal"))
+    second = asyncio.run(client.agent(FILING_URL, "same goal"))
+    assert first == second
+    assert len(fake.requests) == 1 and client.budget.used == 1 and client.cache_hits == 1
+
+
+def test_agent_budget_stops_the_11th_call(tmp_path):
+    client, fake = make_client(tmp_path, limit=10)
+    for i in range(10):
+        asyncio.run(client.agent(FILING_URL, f"goal {i}"))
+    with pytest.raises(CallBudgetExceeded):
+        asyncio.run(client.agent(FILING_URL, "goal 10"))
+    assert len(fake.requests) == 10
+
+
+def test_agent_uses_its_own_timeout(tmp_path):
+    def slow(request):
+        raise httpx.ReadTimeout("timed out", request=request)
+    client = TinyFishClient(api_key=FAKE_KEY, transport=httpx.MockTransport(slow), cache_dir=tmp_path)
+    with pytest.raises(TinyFishError, match=f"agent timed out after {config.TINYFISH_AGENT_TIMEOUT_SECONDS} s"):
+        asyncio.run(client.agent(FILING_URL, "g"))
+
+
+def test_filing_schema_uses_only_supported_keywords():
+    supported = {"anyOf", "enum", "format", "items", "maxItems", "maximum", "minItems", "minimum",
+                 "nullable", "properties", "propertyOrdering", "required", "type"}
+
+    def keywords(node):
+        for key, value in node.items():
+            yield key
+            if key == "properties":
+                for child in value.values():
+                    yield from keywords(child)
+    assert set(keywords(extract_agent.FILING_SCHEMA)) <= supported
+
+
+# --- extract_filing_with_agent --------------------------------------------------
+
+def extract(client, url=FILING_URL):
+    return asyncio.run(extract_filing_with_agent(client, url, "ACME Infra", MOVE))
+
+
+def test_extract_builds_verified_tier1_evidence(tmp_path):
+    client, fake = make_client(tmp_path)
+    e = extract(client)
+    assert (e.url, e.source_tier, e.investigator, e.verified) == (FILING_URL, 1, "sherlock", True)
+    assert e.first_public_at == datetime(2026, 10, 22, 9, 48, tzinfo=IST)
+    assert e.id == extract_agent.evidence_id(FILING_URL)
+    assert len(fake.calls("agent.tinyfish.ai")) == 1 and len(fake.calls("api.fetch.tinyfish.ai")) == 1
+
+
+@pytest.mark.parametrize("published_at", [None, "", "22-Oct-2026", "2026-10-22", "22 October 2026"])
+def test_date_only_or_missing_published_at_returns_none(tmp_path, published_at):
+    fake = FakeTinyFish(agent_responses={FILING_URL: agent_result(FILING_URL, published_at=published_at)})
+    client, _ = make_client(tmp_path, fake=fake)
+    assert extract(client) is None
+
+
+def test_time_without_zone_rejected_off_exchange(tmp_path):
+    client, _ = make_client(tmp_path)
+    assert extract(client, url=NEWS_URL) is None  # "22-Oct-2026 09:48:00" has no zone
+
+
+def test_parse_published_at_rules(monkeypatch):
+    ist_948 = datetime(2026, 10, 22, 9, 48, tzinfo=IST)
+    assert parse_published_at("2026-10-22T04:18:00Z", False) == ist_948
+    assert parse_published_at("22-Oct-2026 09:48 IST", False) == ist_948
+    assert parse_published_at("22-Oct-2026 09:48:00", True) == ist_948
+    monkeypatch.setattr(config, "EXCHANGE_PAGE_TIMES_ARE_IST", False)
+    assert parse_published_at("22-Oct-2026 09:48:00", True) is None
+
+
+def test_agent_cannot_change_url_tier_or_identity(tmp_path):
+    sneaky = agent_result(NEWS_URL, published_at="22-Oct-2026 09:48 IST")
+    sneaky["result"].update({"source_url": FILING_URL, "url": FILING_URL, "source_tier": 1, "tier": 1,
+                             "investigator": "atlas", "id": "evil", "verified": True})
+    client, _ = make_client(tmp_path, fake=FakeTinyFish(agent_responses={NEWS_URL: sneaky}))
+    e = extract(client, url=NEWS_URL)
+    assert (e.url, e.source_tier, e.investigator) == (NEWS_URL, 2, "sherlock")
+    assert e.id == extract_agent.evidence_id(NEWS_URL)
+
+
+def test_verified_only_when_snippet_is_in_fetched_text(tmp_path):
+    other = [{"url": FILING_URL, "final_url": FILING_URL, "text": "A different page entirely."}]
+    client, _ = make_client(tmp_path, fake=FakeTinyFish(fetch_results=other))
+    assert extract(client).verified is False
+
+
+def test_verify_skipped_when_fetch_fails(tmp_path):
+    client, _ = make_client(tmp_path, fake=FakeTinyFish(fetch_status=500))
+    e = extract(client)
+    assert e is not None and e.verified is False
+
+
+def test_verify_skipped_when_budget_spent(tmp_path):
+    client, fake = make_client(tmp_path, limit=1)  # the agent call uses the whole budget
+    e = extract(client)
+    assert e is not None and e.verified is False
+    assert fake.calls("api.fetch.tinyfish.ai") == []
+
+
+# --- live Sherlock (Agent path) ---------------------------------------------------
 
 def run_sherlock(client, company=None):
     return asyncio.run(Sherlock(client, mode="live", company=company).run(MOVE))
 
 
-def test_sherlock_live_keeps_filings_and_skips_none(tmp_path, monkeypatch):
-    calls = []
-
-    def fake_extract(kind, text, name, move, source_name, url, evidence_id, investigator):
-        calls.append((kind, url, source_name))
-        return filing_evidence(url).model_copy(update={"id": evidence_id}) if url == FILING_URL else None
-
-    monkeypatch.setattr(sherlock_module, "extract_evidence", fake_extract)
-    client, fake = make_client(tmp_path)
+def test_sherlock_live_reads_up_to_two_exchange_pages(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "LLM_API_KEY", "")  # no LLM key needed
+    date_only = agent_result(BSE_URL, published_at="22-Oct-2026")
+    client, fake = make_client(tmp_path, fake=FakeTinyFish(agent_responses={BSE_URL: date_only}))
     report = run_sherlock(client, company="ACME Infra")
 
-    fetch_body = json.loads(fake.requests[1].content)
-    assert fetch_body["urls"] == [FILING_URL, BSE_URL]  # exchange domains only, at most 2
-    assert calls == [("filing", FILING_URL, "NSE corporate filing"),
-                     ("filing", BSE_URL, "BSE corporate filing")]
+    agent_urls = [json.loads(r.content)["url"] for r in fake.calls("agent.tinyfish.ai")]
+    assert agent_urls == [FILING_URL, BSE_URL]  # exchange domains only, never NEWS_URL
     [e] = report.evidence
-    assert (e.url, e.source_tier, e.investigator) == (FILING_URL, 1, "sherlock")
-    assert e.first_public_at == datetime(2026, 10, 22, 9, 48, tzinfo=IST)
+    assert (e.url, e.source_tier, e.investigator, e.verified) == (FILING_URL, 1, "sherlock", True)
     assert "3 search result(s), 2 on exchange domains" in report.notes
-    assert "fetched 2 of 2 page(s)" in report.notes
-    assert "rejected 1" in report.notes
-    assert "calls used 2/10" in report.notes
+    assert "pages found 2, extracted 1, rejected 1" in report.notes
+    assert "no usable timestamp" in report.notes
+    assert "calls used 4/10" in report.notes  # search + 2 agent + 1 fetch (rejected page not verified)
 
 
 def test_sherlock_live_missing_key_gives_empty_report(tmp_path):
@@ -186,12 +349,20 @@ def test_sherlock_live_missing_key_gives_empty_report(tmp_path):
     assert fake.requests == []
 
 
-def test_sherlock_live_budget_runs_out(tmp_path, monkeypatch):
-    monkeypatch.setattr(sherlock_module, "extract_evidence", lambda *a: pytest.fail("no fetch"))
-    client, _ = make_client(tmp_path, limit=1)  # search allowed, fetch refused
+def test_sherlock_live_budget_runs_out(tmp_path):
+    client, fake = make_client(tmp_path, limit=1)  # search allowed, agent refused
     report = run_sherlock(client)
-    assert report.evidence == []
+    assert report.evidence == [] and fake.calls("agent.tinyfish.ai") == []
     assert "live stopped: TinyFish call budget of 1 used up" in report.notes
+
+
+def test_sherlock_live_failed_agent_run_rejects_that_page(tmp_path):
+    failed = {"run_id": "r", "status": "FAILED", "result": None,
+              "error": {"code": "SITE_BLOCKED", "message": "blocked", "category": "AGENT_FAILURE"}}
+    client, _ = make_client(tmp_path, fake=FakeTinyFish(agent_responses={FILING_URL: failed}))
+    report = run_sherlock(client)
+    assert [e.url for e in report.evidence] == [BSE_URL]
+    assert "SITE_BLOCKED" in report.notes
 
 
 def test_sherlock_live_api_error_gives_empty_report(tmp_path):
@@ -200,20 +371,12 @@ def test_sherlock_live_api_error_gives_empty_report(tmp_path):
     assert report.evidence == [] and "HTTP 402" in report.notes
 
 
-def test_sherlock_live_no_exchange_results_fetches_nothing(tmp_path):
+def test_sherlock_live_no_exchange_results_reads_nothing(tmp_path):
     fake = FakeTinyFish(search_results=[{"url": NEWS_URL, "title": "News"}])
     client, _ = make_client(tmp_path, fake=fake)
     report = run_sherlock(client)
     assert len(fake.requests) == 1 and report.evidence == []
     assert "no exchange filing found" in report.notes
-
-
-def test_sherlock_live_rejects_redirect_off_exchange(tmp_path, monkeypatch):
-    monkeypatch.setattr(sherlock_module, "extract_evidence", lambda *a: pytest.fail("not called"))
-    fake = FakeTinyFish(search_results=[{"url": FILING_URL}],
-                        fetch_results=[{"url": FILING_URL, "final_url": NEWS_URL, "text": "x"}])
-    client, _ = make_client(tmp_path, fake=fake)
-    assert run_sherlock(client).evidence == []
 
 
 # --- cache helpers -----------------------------------------------------------

@@ -1,9 +1,11 @@
 """Live demo: run ONLY Sherlock against real TinyFish for one company and move time.
 
 Refuses to run unless STOCKLENS_MODE=live and TINYFISH_API_KEY is set in .env.
-Uses at most config.MAX_TINYFISH_CALLS_PER_INVESTIGATION calls (normally 2:
-one search, one fetch). Repeating the same command is served from
-fixtures/live_cache/ and costs nothing. Run from the repo root:
+No LLM key is needed: filings are read with the TinyFish Agent. Uses at most
+config.MAX_TINYFISH_CALLS_PER_INVESTIGATION calls (normally up to 5: one
+search, then per filing page one Agent call and one Fetch to verify the
+snippet). Repeating the same command is served from fixtures/live_cache/ and
+costs nothing. Run from the repo root:
 
     python scripts/live_sherlock.py "Infosys" 2026-10-22T10:02
     python scripts/live_sherlock.py INFY 2026-10-22T10:02 --save-case case_live
@@ -66,9 +68,6 @@ def main(argv: list[str] | None = None) -> int:
     if problem:
         print(f"Refusing to run: {problem}")
         return 1
-    if not config.LLM_API_KEY.strip():
-        print("Warning: LLM_API_KEY is not set, so extraction returns nothing and no evidence "
-              "will be kept. Searches and fetches still run (and are cached).")
 
     logging.basicConfig(level=logging.INFO, format="  %(message)s")
     move = build_move(args.company, args.move_start, args.window)
@@ -85,8 +84,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  claim:           {e.claim}")
         print(f"  snippet:         {e.snippet}")
         print(f"  url:             {e.url}")
+    agent_calls = sum(1 for call in client.budget.calls if call.startswith("agent"))
     print(f"\nTinyFish calls used: {client.budget.used}/{client.budget.limit} "
-          f"(cache hits: {client.cache_hits})")
+          f"(cache hits, free: {client.cache_hits})")
+    print(f"Agent calls made (paid, check on the TinyFish dashboard): {agent_calls}")
 
     if args.save_case:
         if not report.evidence:

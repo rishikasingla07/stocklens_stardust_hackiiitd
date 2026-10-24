@@ -164,10 +164,9 @@ def test_budget_logs_each_call(caplog):
     assert "TinyFish call 1/5: search ACMEINFRA filings" in caplog.text
 
 
-# search() and fetch() are live now; see tests/test_tinyfish_live.py.
+# search(), fetch() and agent() are live now; see tests/test_tinyfish_live.py.
 @pytest.mark.parametrize("method, args", [
-    ("agent", ("goal",)), ("browser", ("https://x",)), ("monitor", ("https://x",)),
-    ("research", ("q",)),
+    ("browser", ("https://x",)), ("monitor", ("https://x",)), ("research", ("q",)),
 ])
 def test_client_methods_not_connected(method, args):
     client = TinyFishClient(api_key="", budget=CallBudget(limit=10))
@@ -179,9 +178,9 @@ def test_client_methods_not_connected(method, args):
 def test_client_respects_budget():
     client = TinyFishClient(api_key="", budget=CallBudget(limit=1))
     with pytest.raises(NotImplementedError):
-        asyncio.run(client.agent("first"))
+        asyncio.run(client.browser("https://first"))
     with pytest.raises(CallBudgetExceeded):
-        asyncio.run(client.agent("second"))
+        asyncio.run(client.browser("https://second"))
 
 
 def test_only_live_investigators_go_live(monkeypatch):
