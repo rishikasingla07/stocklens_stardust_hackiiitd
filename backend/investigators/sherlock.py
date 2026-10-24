@@ -7,10 +7,11 @@ Hands over: filing text, quoted snippet and official timestamp.
 Filings are Tier 1; company news is Tier 2.
 
 Live path (MODE=live), TinyFish key only, no LLM key: one Search for filings
-around the move day, then for up to SHERLOCK_MAX_AGENT_PAGES exchange-domain
-results one Agent call to read the page and one Fetch to verify the quoted
-snippet (backend/tinyfish/extract_agent.py). Pages without a usable timestamp
-are rejected. Never invents evidence.
+around the move day, then exchange-domain results are read one at a time with
+the Agent (backend/tinyfish/extract_agent.py), plus one Fetch to verify the
+quoted snippet of an accepted page. A rejected page (e.g. date only, no time of
+day) moves on to the next, up to SHERLOCK_MAX_PAGES; it stops at the first
+accepted page. Never invents evidence.
 """
 
 from datetime import timedelta
@@ -29,6 +30,7 @@ class Sherlock(Investigator):
                  company: str | None = None):
         super().__init__(client, mode)
         self.company = company  # search by company name if given, else by ticker
+        self.time_sources: dict[str, str | None] = {}  # evidence id -> Agent's time_source
 
     async def gather_live(self, move: Move) -> Report:
         """Search for filings, then read each with the Agent. Always returns a Report, never raises."""
@@ -57,26 +59,30 @@ class Sherlock(Investigator):
         results = found.get("results") or []
         urls = list(dict.fromkeys(r["url"] for r in results
                                   if r.get("url") and is_exchange_filing(r["url"])))
-        pages = urls[:config.SHERLOCK_MAX_AGENT_PAGES]
+        pages = urls[:config.SHERLOCK_MAX_PAGES]
         notes.append(f"live: {len(results)} search result(s), {len(urls)} on exchange domains")
         if not pages:
             notes.append("no exchange filing found to read")
             return
 
         rejected: list[str] = []
+        read = 0
         try:
             for url in pages:
+                read += 1
                 try:
                     result = await extract_filing(self.client, url, name, move)
                 except TinyFishError as exc:
                     rejected.append(f"{url}: {exc}")
                     continue
                 if result.evidence is None:
-                    rejected.append(f"{url}: {result.reason}")
-                else:
-                    evidence.append(result.evidence)
+                    rejected.append(f"{url}: {result.reason} (time_source: {result.time_source!r})")
+                    continue
+                evidence.append(result.evidence)
+                self.time_sources[result.evidence.id] = result.time_source
+                break  # first accepted filing is enough
         finally:
-            notes.append(f"pages found {len(pages)}, extracted {len(evidence)}, "
+            notes.append(f"pages found {len(pages)}, read {read}, extracted {len(evidence)}, "
                          f"rejected {len(rejected)}")
             notes.extend(f"rejected {r}" for r in rejected)
 

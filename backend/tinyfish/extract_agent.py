@@ -29,17 +29,24 @@ FILING_SCHEMA = {
         "published_at": {"type": "string", "nullable": True},
         "source_name": {"type": "string"},
         "snippet": {"type": "string"},
+        "time_source": {"type": "string", "nullable": True},
     },
-    "required": ["claim", "published_at", "source_name", "snippet"],
+    "required": ["claim", "published_at", "source_name", "snippet", "time_source"],
 }
 
 GOAL = (
     "This page is an official stock exchange filing or company announcement about {company}. "
     "Report ONLY facts that are visible on this page. Do not use outside knowledge and do not guess. "
     "claim: one sentence saying what the filing announces. "
-    "published_at: the official filing, announcement or dissemination date and time exactly as "
-    "written on the page, copied character for character including any time zone; null if the page "
-    "does not show a date and time. "
+    "published_at: the official time this filing became public, copied character for character "
+    "exactly as written on the page, including any time zone. Use the first of these that the page "
+    "or document shows: (1) the exchange broadcast or dissemination date and time; (2) the "
+    "'exchange received' date and time; (3) a date and time stamped on the document itself; "
+    "(4) only if none of those exists, the document date as written. Never add a time that is not "
+    "shown; null if no date is shown at all. "
+    "time_source: a short phrase saying where published_at came from, e.g. 'exchange dissemination "
+    "time', 'exchange received time', 'time stamped on document', 'document date only'; null if "
+    "published_at is null. "
     "source_name: who published the page, as shown on the page. "
     "snippet: a short exact quote (one or two sentences) copied verbatim from the page that "
     "supports the claim."
@@ -68,6 +75,7 @@ FORMATS = [
 class ExtractResult:
     evidence: Evidence | None
     reason: str  # why it was rejected, or "kept"
+    time_source: str | None = None  # the Agent's note on where published_at came from
 
 
 def is_exchange_filing(url: str) -> bool:
@@ -149,13 +157,17 @@ async def extract_filing(client: TinyFishClient, url: str, company: str,
     """
     answer = await client.agent(url, GOAL.format(company=company), output_schema=FILING_SCHEMA)
 
+    time_source = answer.get("time_source")
+    time_source = time_source.strip() or None if isinstance(time_source, str) else None
     exchange_page = is_exchange_filing(url)
+    # The date-only rule lives here, whatever the Agent's time_source says. Never invent a time.
     published = parse_published_at(answer.get("published_at"), exchange_page)
     if published is None:
-        return ExtractResult(None, "no usable timestamp (missing, date only or no time zone)")
+        return ExtractResult(None, "no usable timestamp (missing, date only or no time zone)",
+                             time_source)
     claim, snippet = answer.get("claim"), answer.get("snippet")
     if not isinstance(claim, str) or not claim.strip() or not isinstance(snippet, str) or not snippet.strip():
-        return ExtractResult(None, "no claim or snippet")
+        return ExtractResult(None, "no claim or snippet", time_source)
     source_name = answer.get("source_name")
     if not isinstance(source_name, str) or not source_name.strip():
         source_name = "BSE corporate filing" if "bseindia" in url else (
@@ -168,11 +180,11 @@ async def extract_filing(client: TinyFishClient, url: str, company: str,
             snippet=snippet.strip(), investigator="sherlock", verified=False,
         )
     except ValidationError:
-        return ExtractResult(None, "invalid evidence")
+        return ExtractResult(None, "invalid evidence", time_source)
 
     if await _verified(client, url, evidence.snippet):
         evidence = evidence.model_copy(update={"verified": True})
-    return ExtractResult(evidence, "kept")
+    return ExtractResult(evidence, "kept", time_source)
 
 
 async def extract_filing_with_agent(client: TinyFishClient, url: str, company: str,

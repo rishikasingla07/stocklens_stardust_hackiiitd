@@ -207,3 +207,9 @@ SHERLOCK_MAX_AGENT_PAGES = 2
 # such times as IST. False: reject any time without an explicit time zone.
 # Times on other sites are always rejected without an explicit time zone.
 EXCHANGE_PAGE_TIMES_ARE_IST = True
+
+# Live Sherlock reads exchange-domain search results (bseindia.com and any
+# nseindia.com subdomain, e.g. nsearchives.nseindia.com) one at a time and
+# stops at the first one accepted. A page rejected (e.g. date only, no time of
+# day) moves on to the next, up to this many pages.
+SHERLOCK_MAX_PAGES = 3

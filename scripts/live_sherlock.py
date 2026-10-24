@@ -3,8 +3,8 @@
 Refuses to run unless STOCKLENS_MODE=live and TINYFISH_API_KEY is set in .env.
 No LLM key is needed: filings are read with the TinyFish Agent. Uses at most
 config.MAX_TINYFISH_CALLS_PER_INVESTIGATION calls (normally up to 5: one
-search, then per filing page one Agent call and one Fetch to verify the
-snippet). Repeating the same command is served from fixtures/live_cache/ and
+search, up to SHERLOCK_MAX_PAGES Agent calls until a page is accepted, and one
+Fetch to verify its snippet). Repeating the same command is served from fixtures/live_cache/ and
 costs nothing. Run from the repo root:
 
     python scripts/live_sherlock.py "Infosys" 2026-10-22T10:02
@@ -73,14 +73,18 @@ def main(argv: list[str] | None = None) -> int:
     move = build_move(args.company, args.move_start, args.window)
     client = TinyFishClient()
     print(f"Sherlock live: {args.company} | move start {move.move_start_at.isoformat()}")
-    report = asyncio.run(Sherlock(client, mode="live", company=args.company).run(move))
+    sherlock = Sherlock(client, mode="live", company=args.company)
+    report = asyncio.run(sherlock.run(move))
 
-    print(f"\nNotes: {report.notes}")
+    print("\nNotes:")
+    for note in report.notes.split("; "):
+        print(f"  {note}")
     print(f"Evidence found: {len(report.evidence)}")
     for e in report.evidence:
         print(f"\n- source:          {e.source_name} (Tier {e.source_tier}, "
               f"{'verified' if e.verified else 'unverified'})")
         print(f"  first_public_at: {e.first_public_at.isoformat() if e.first_public_at else None}")
+        print(f"  time_source:     {sherlock.time_sources.get(e.id)}")
         print(f"  claim:           {e.claim}")
         print(f"  snippet:         {e.snippet}")
         print(f"  url:             {e.url}")

@@ -32,7 +32,8 @@ SNIPPET = "The Board has revised the revenue growth guidance for FY27 to 6-8%"
 def agent_result(url: str, **overrides) -> dict:
     """What the Agent reads off a filing page (documented /run COMPLETED shape)."""
     answer = {"claim": "ACME Infra revises FY27 revenue growth guidance",
-              "published_at": "22-Oct-2026 09:48:00", "source_name": "NSE", "snippet": SNIPPET}
+              "published_at": "22-Oct-2026 09:48:00", "source_name": "NSE", "snippet": SNIPPET,
+              "time_source": "exchange dissemination time"}
     answer.update(overrides)
     return {"run_id": "run-1", "status": "COMPLETED", "started_at": "2026-10-24T10:00:00Z",
             "finished_at": "2026-10-24T10:00:20Z", "num_of_steps": 3, "result": answer,
@@ -325,20 +326,65 @@ def run_sherlock(client, company=None):
     return asyncio.run(Sherlock(client, mode="live", company=company).run(MOVE))
 
 
-def test_sherlock_live_reads_up_to_two_exchange_pages(tmp_path, monkeypatch):
+ARCHIVE_URL = "https://nsearchives.nseindia.com/corporate/ADV_ACMEINFRA_22OCT2026.pdf"
+DATE_ONLY = {"published_at": "22-Oct-2026", "time_source": "document date only"}
+
+
+def test_date_only_page_rejected_and_second_page_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LLM_API_KEY", "")  # no LLM key needed
-    date_only = agent_result(BSE_URL, published_at="22-Oct-2026")
-    client, fake = make_client(tmp_path, fake=FakeTinyFish(agent_responses={BSE_URL: date_only}))
-    report = run_sherlock(client, company="ACME Infra")
+    fake = FakeTinyFish(
+        search_results=[{"url": ARCHIVE_URL}, {"url": NEWS_URL}, {"url": BSE_URL}, {"url": FILING_URL}],
+        agent_responses={ARCHIVE_URL: agent_result(ARCHIVE_URL, **DATE_ONLY)})
+    client, _ = make_client(tmp_path, fake=fake)
+    sherlock = Sherlock(client, mode="live", company="ACME Infra")
+    report = asyncio.run(sherlock.run(MOVE))
 
     agent_urls = [json.loads(r.content)["url"] for r in fake.calls("agent.tinyfish.ai")]
-    assert agent_urls == [FILING_URL, BSE_URL]  # exchange domains only, never NEWS_URL
+    assert agent_urls == [ARCHIVE_URL, BSE_URL]  # nsearchives subdomain counts; stops after BSE
     [e] = report.evidence
-    assert (e.url, e.source_tier, e.investigator, e.verified) == (FILING_URL, 1, "sherlock", True)
-    assert "3 search result(s), 2 on exchange domains" in report.notes
-    assert "pages found 2, extracted 1, rejected 1" in report.notes
-    assert "no usable timestamp" in report.notes
-    assert "calls used 4/10" in report.notes  # search + 2 agent + 1 fetch (rejected page not verified)
+    assert (e.url, e.source_tier, e.investigator, e.verified) == (BSE_URL, 1, "sherlock", True)
+    assert e.first_public_at == datetime(2026, 10, 22, 9, 48, tzinfo=IST)
+    assert sherlock.time_sources[e.id] == "exchange dissemination time"
+    assert "4 search result(s), 3 on exchange domains" in report.notes
+    assert "pages found 3, read 2, extracted 1, rejected 1" in report.notes
+    assert (f"rejected {ARCHIVE_URL}: no usable timestamp (missing, date only or no time zone) "
+            "(time_source: 'document date only')") in report.notes
+    assert "calls used 4/10" in report.notes  # search + 2 agent + 1 verify fetch
+
+
+def test_sherlock_reads_at_most_max_pages(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "SHERLOCK_MAX_PAGES", 3)
+    urls = [f"https://nsearchives.nseindia.com/corporate/f{i}.pdf" for i in range(5)]
+    fake = FakeTinyFish(search_results=[{"url": u} for u in urls],
+                        agent_responses={u: agent_result(u, **DATE_ONLY) for u in urls})
+    client, _ = make_client(tmp_path, fake=fake)
+    report = run_sherlock(client)
+    assert len(fake.calls("agent.tinyfish.ai")) == 3 and report.evidence == []
+    assert "pages found 3, read 3, extracted 0, rejected 3" in report.notes
+
+
+def test_time_source_is_passed_through(tmp_path):
+    fake = FakeTinyFish(agent_responses={FILING_URL: agent_result(
+        FILING_URL, time_source="exchange received time")})
+    client, _ = make_client(tmp_path, fake=fake)
+    result = asyncio.run(extract_agent.extract_filing(client, FILING_URL, "ACME Infra", MOVE))
+    assert result.time_source == "exchange received time" and result.evidence is not None
+
+
+def test_goal_and_schema_ask_for_time_source(tmp_path):
+    client, fake = make_client(tmp_path)
+    extract(client)
+    body = json.loads(fake.calls("agent.tinyfish.ai")[0].content)
+    assert "time_source" in body["output_schema"]["required"]
+    for phrase in ("broadcast or dissemination", "exchange received", "stamped on the document",
+                   "document date"):
+        assert phrase in body["goal"]
+
+
+def test_exchange_domains_include_subdomains():
+    assert extract_agent.is_exchange_filing(ARCHIVE_URL)
+    assert extract_agent.is_exchange_filing("https://www.bseindia.com/x.pdf")
+    assert not extract_agent.is_exchange_filing("https://nseindia.com.evil.example/x.pdf")
 
 
 def test_sherlock_live_missing_key_gives_empty_report(tmp_path):
@@ -361,7 +407,7 @@ def test_sherlock_live_failed_agent_run_rejects_that_page(tmp_path):
               "error": {"code": "SITE_BLOCKED", "message": "blocked", "category": "AGENT_FAILURE"}}
     client, _ = make_client(tmp_path, fake=FakeTinyFish(agent_responses={FILING_URL: failed}))
     report = run_sherlock(client)
-    assert [e.url for e in report.evidence] == [BSE_URL]
+    assert [e.url for e in report.evidence] == [BSE_URL]  # moved on to the next page
     assert "SITE_BLOCKED" in report.notes
 
 
