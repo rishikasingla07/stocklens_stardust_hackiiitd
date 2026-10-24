@@ -1,0 +1,1 @@
+-- StockLens SQLite schema (moves, evidence, reports, cards). To be defined.
