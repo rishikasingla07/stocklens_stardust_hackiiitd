@@ -41,14 +41,20 @@ def run_investigators(move: Move, include_skeptic: bool = False,
     return asyncio.run(investigate(move, include_skeptic, client))
 
 
+def card_for_move(move: Move, include_skeptic: bool = False,
+                  client: TinyFishClient | None = None) -> Card:
+    """Run the investigators and the consensus engine for a given Move (e.g. one the trigger flagged)."""
+    return build_card_from_reports(move, run_investigators(move, include_skeptic, client))
+
+
 def live_card(ticker: str, include_skeptic: bool = False) -> Card | None:
     """Build the Card for a ticker, or None if there is no case for it.
 
-    The Move currently comes from the recorded case (replay.find_case). Live
-    move detection via the trigger engine and market data is not wired in yet.
+    The Move comes from the recorded case (replay.find_case). /simulate is the
+    path where the trigger engine produces the Move instead.
     """
     found = replay.find_case(ticker)
     if found is None:
         return None
     _, move = found
-    return build_card_from_reports(move, run_investigators(move, include_skeptic))
+    return card_for_move(move, include_skeptic)

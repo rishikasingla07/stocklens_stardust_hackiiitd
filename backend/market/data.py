@@ -112,6 +112,28 @@ def visible_bars(bars: list[Bar], as_of: datetime, delay: int | None = None) -> 
     return [b for b in bars if b.at <= cutoff]
 
 
+def find_case(ticker: str, path: Path = MARKET_DATA_FILE) -> str | None:
+    """The case that has recorded market data for a ticker, or None."""
+    for case, tickers in list_cases(path).items():
+        if ticker.upper() in tickers:
+            return case
+    return None
+
+
+def delayed_quote(case: str, ticker: str, as_of: datetime,
+                  path: Path = MARKET_DATA_FILE) -> dict | None:
+    """What the delayed feed shows at `as_of`: {"price", "reference"}, or None if nothing is visible yet.
+
+    price is the latest visible bar; reference is the day's first recorded bar,
+    which stands in for the previous close when working out the day change.
+    """
+    data = get_ticker_data(case, ticker, path)
+    bars = visible_bars(data.stock, as_of, delay_minutes(path))
+    if not bars:
+        return None
+    return {"price": bars[-1].price, "reference": data.stock[0].price}
+
+
 def get_move(case: str, ticker: str, path: Path = MARKET_DATA_FILE) -> Move | None:
     """Build the Move for a case's recorded window, or None if it does not pass the trigger."""
     data = get_ticker_data(case, ticker, path)

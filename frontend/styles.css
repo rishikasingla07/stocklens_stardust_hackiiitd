@@ -311,6 +311,8 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
 .btn-secondary:hover { background: var(--panel-raised); }
 .btn-small { min-height: 2.2rem; padding: 0.3rem 0.8rem; font-size: 0.85rem; }
 .btn[disabled] { cursor: progress; opacity: 0.85; }
+.btn-simulate[disabled] { cursor: not-allowed; opacity: 0.5; }
+.btn-simulate.is-busy { cursor: progress; opacity: 0.85; }
 
 .tag {
   display: inline-flex;
@@ -369,6 +371,25 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
 .message.tone-error { border-color: var(--red); }
 .message-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s3); margin-top: var(--s5); }
 .loading { color: var(--muted); padding: var(--s6) 0; text-align: center; }
+
+/* --- Trigger engine panel (Simulate move) ------------------------------------------- */
+
+.trigger-panel {
+  padding: var(--s4) var(--s5);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel-sunk);
+}
+.trigger-panel.is-flagged { border-left-color: var(--amber); }
+.trigger-panel.is-quiet { border-left-color: var(--faint); }
+.trigger-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s1) var(--s4); }
+.trigger-title { font-size: 0.95rem; font-weight: 700; }
+.trigger-badge { color: var(--faint); font-size: 0.78rem; }
+.trigger-panel.is-flagged .trigger-badge { color: var(--amber); font-weight: 700; }
+.trigger-text { margin-top: var(--s2); font-size: 1.05rem; font-weight: 600; }
+.trigger-panel.is-checking .trigger-text { color: var(--muted); font-weight: 500; }
+.trigger-sub { margin-top: var(--s1); color: var(--muted); font-size: 0.85rem; }
 
 /* --- Investigation strip ------------------------------------------------------------ */
 
@@ -935,7 +956,7 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
   }
   html { font-size: 11pt; }
   body { background: #fff; color: #000; }
-  .skip-link, .header-meta, .stocks, .compare, .strip, .action-bar, .toast { display: none !important; }
+  .skip-link, .header-meta, .stocks, .compare, .strip, .trigger-panel, .action-bar, .toast { display: none !important; }
   .site-header, main, .compare, .site-footer { max-width: none; padding-left: 0; padding-right: 0; }
   main { padding-top: var(--s4); }
   .panels { grid-template-columns: 1fr; }

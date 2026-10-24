@@ -30,6 +30,8 @@ const AXIS_STRETCH_LIMIT = 180;
 // Investigation strip timing (ms): when each investigator chip resolves, and the total.
 const CHIP_TIMES = [800, 1350, 1900];
 const PROGRESS_MS = 2500;
+// Simulate move: how long the trigger result is shown before the investigation strip starts.
+const TRIGGER_PAUSE_MS = 1200;
 
 const state = {
   mode: loadMode(),
@@ -38,6 +40,8 @@ const state = {
   ticker: null,
   card: null,
   run: 0, // bumps on every navigation so stale responses are dropped
+  trigger: null, // {ticker, html}: trigger panel kept above a simulated result
+  simulating: null, // run number of the Simulate move request in flight
 };
 
 // --- Helpers -----------------------------------------------------------------
@@ -252,6 +256,17 @@ function markSelected() {
     if (on) el.setAttribute("aria-current", "true");
     else el.removeAttribute("aria-current");
   });
+  updateSimulateButton();
+}
+
+function updateSimulateButton() {
+  const btn = $("#simulate-btn");
+  if (!btn) return;
+  const busy = state.simulating !== null && state.simulating === state.run;
+  btn.disabled = !state.ticker || busy;
+  btn.classList.toggle("is-busy", busy);
+  btn.textContent = busy ? "Simulating…" : "Simulate move";
+  btn.title = state.ticker ? `Run the trigger engine on ${state.ticker}'s recorded prices` : "Select a stock first";
 }
 
 // --- Evidence model ------------------------------------------------------------
@@ -688,7 +703,9 @@ function renderResult(card, { animate, challenged = false } = {}) {
   const axis = axisRange(card, items);
   const name = stockName(card.ticker);
   const view = $("#view");
+  const trigger = state.trigger && state.trigger.ticker === card.ticker ? state.trigger.html : "";
   view.innerHTML = `
+    ${trigger}
     ${stripHtml(card.ticker, { done: true, challenged, counts: countsByInvestigator(card) })}
     <div class="result ${animate ? "animate" : ""}">
       <div class="summary reveal" style="--d:0ms">
@@ -763,6 +780,7 @@ async function investigate(ticker) {
   const run = ++state.run;
   state.ticker = ticker;
   state.card = null;
+  state.trigger = null;
   markSelected();
   await stocksReady;
   if (run !== state.run) return;
@@ -791,6 +809,85 @@ async function investigate(ticker) {
 
   state.card = card;
   renderResult(card, { animate });
+}
+
+// --- Simulate move (trigger engine -> investigation) ---------------------------------
+
+function fmtNumber(value) {
+  return String(Number(value));
+}
+
+/** The "Trigger engine" panel: checking (sim = null), flagged, or no unusual move. */
+function triggerPanelHtml(ticker, sim) {
+  const head = (badge) => `<div class="trigger-head">
+      <h2 class="trigger-title">Trigger engine <span class="strip-ticker">${esc(ticker)}</span></h2>
+      <span class="trigger-badge">${esc(badge)}</span>
+    </div>`;
+  if (!sim) {
+    return `<section class="trigger-panel is-checking" aria-label="Trigger engine">
+      ${head("price and volume rules, no AI")}
+      <p class="trigger-text">Checking the recorded price and volume against the thresholds…</p>
+    </section>`;
+  }
+  const t = sim.thresholds || {};
+  const limits = `${fmtNumber(t.min_pct_change)}% and ${fmtNumber(t.min_volume_multiple)}×`;
+  if (!sim.flagged || !sim.move) {
+    return `<section class="trigger-panel is-quiet" aria-label="Trigger engine">
+      ${head("not flagged")}
+      <p class="trigger-text">No unusual move: no investigation started</p>
+      <p class="trigger-sub">A move is flagged only when it reaches ${esc(limits)} volume together.</p>
+    </section>`;
+  }
+  const m = sim.move;
+  const text = `${fmtSigned(m.pct_change, 1)} in ${m.window_minutes} min, ` +
+    `${Number(m.volume_multiple).toFixed(1)}× volume: passes thresholds of ${limits}`;
+  return `<section class="trigger-panel is-flagged" aria-label="Trigger engine">
+    ${head("move flagged")}
+    <p class="trigger-text">${esc(text)}</p>
+    <p class="trigger-sub">Move began ${esc(fmtWhen(m.move_start_at))}. Investigation started.</p>
+  </section>`;
+}
+
+async function simulate(ticker) {
+  if (!ticker) { toast("Select a stock first."); return; }
+  const run = ++state.run;
+  state.ticker = ticker;
+  state.card = null;
+  state.trigger = null;
+  state.simulating = run;
+  markSelected();
+  try {
+    const animate = !reducedMotion();
+    const started = performance.now();
+    $("#view").innerHTML = triggerPanelHtml(ticker, null);
+    const request = api("POST", `/simulate/${encodeURIComponent(ticker)}`)
+      .then((sim) => ({ sim }), (error) => ({ error }));
+    await healthReady;
+    const { sim, error } = await request;
+    if (run !== state.run) return;
+    if (error) {
+      if (error.status === 404) renderMessage("The trigger engine cannot run", error.message);
+      else renderFailure(ticker, error);
+      return;
+    }
+
+    const panel = triggerPanelHtml(ticker, sim);
+    $("#view").innerHTML = panel;
+    if (!sim.flagged || !sim.card) return;
+    state.trigger = { ticker, html: panel };
+
+    if (animate) {
+      await sleep(started + TRIGGER_PAUSE_MS - performance.now());
+      if (run !== state.run) return;
+      $("#view").innerHTML = panel + stripHtml(ticker);
+      if (!(await playStrip(run, countsByInvestigator(sim.card), performance.now()))) return;
+    }
+    state.card = sim.card;
+    renderResult(sim.card, { animate });
+  } finally {
+    if (state.simulating === run) state.simulating = null;
+    updateSimulateButton();
+  }
 }
 
 // --- Actions -----------------------------------------------------------------
@@ -886,6 +983,7 @@ function route() {
     state.run++;
     state.ticker = null;
     state.card = null;
+    state.trigger = null;
     document.title = "StockLens";
     markSelected();
     renderHome();
@@ -912,6 +1010,8 @@ document.addEventListener("click", (event) => {
     toast("Receipt downloaded. The printable version opened in a new tab.");
   } else if (action.dataset.action === "challenge") {
     challenge(action.dataset.ticker, action);
+  } else if (action.dataset.action === "simulate") {
+    simulate(state.ticker);
   } else if (action.dataset.action === "retry") {
     route();
   } else if (action.dataset.action === "reload-stocks") {

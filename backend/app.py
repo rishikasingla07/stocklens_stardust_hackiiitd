@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from backend import config, pipeline
 from backend.consensus.engine import build_card
 from backend.llm.explain import fill_explanation, offline_explanation
+from backend.market import data as market_data
 from backend.models import IST, Card, Evidence, Move
 
 log = logging.getLogger(__name__)
@@ -24,8 +25,10 @@ app.mount("/static", StaticFiles(directory=config.FRONTEND_DIR), name="static")
 
 
 # --- Demo portfolio ----------------------------------------------------------
-# Hardcoded demo prices, not live quotes. The three fixture tickers use the
-# first and last prices in fixtures/market_data.json.
+# Hardcoded demo prices, not live quotes. Tickers with recorded series in
+# fixtures/market_data.json are overridden in /stocks by the delayed feed, and
+# only those can be flagged (by the trigger engine). The prices below are
+# fallbacks for them.
 
 HOLDINGS = [
     {"ticker": "ACMEINFRA", "name": "ACME Infra", "price": 1180.00, "prev_close": 1251.00},
@@ -107,15 +110,32 @@ def index() -> FileResponse:
     return FileResponse(config.FRONTEND_DIR / "index.html")
 
 
+def trigger_thresholds() -> dict:
+    """The trigger engine's thresholds, as shown to the user."""
+    return {
+        "min_pct_change": config.TRIGGER_MIN_PCT_CHANGE,
+        "min_volume_multiple": config.TRIGGER_MIN_VOLUME_MULTIPLE,
+        "default_window_minutes": config.TRIGGER_DEFAULT_WINDOW_MINUTES,
+    }
+
+
 def _stock_row(stock: dict) -> dict:
-    change = stock["price"] - stock["prev_close"]
+    """One /stocks row. Recorded tickers: delayed-feed price, alert only if the trigger flags a move."""
+    price, reference, alert = stock["price"], stock["prev_close"], False
+    case = market_data.find_case(stock["ticker"])
+    if case is not None:
+        quote = market_data.delayed_quote(case, stock["ticker"], datetime.now(IST))
+        if quote is not None:
+            price, reference = quote["price"], quote["reference"]
+        alert = market_data.get_move(case, stock["ticker"]) is not None
+    change = price - reference
     return {
         "ticker": stock["ticker"],
         "name": stock["name"],
-        "price": stock["price"],
+        "price": price,
         "change": round(change, 2),
-        "change_pct": round(100 * change / stock["prev_close"], 2),
-        "alert": stock["ticker"] in FIXTURES,
+        "change_pct": round(100 * change / reference, 2),
+        "alert": alert,
     }
 
 
@@ -148,6 +168,24 @@ def receipt(ticker: str, format: str = "json") -> JSONResponse | HTMLResponse:
     }
     filename = f"stocklens-receipt-{card.ticker}.json"
     return JSONResponse(body, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.post("/simulate/{ticker}")
+def simulate(ticker: str) -> dict:
+    """Run the trigger engine on the ticker's recorded series; if it flags a move, investigate that Move."""
+    ticker = ticker.upper()
+    case = market_data.find_case(ticker)
+    if case is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No recorded market data for {ticker}, so the trigger cannot run.")
+    move = market_data.get_move(case, ticker)
+    card = with_explanation(pipeline.card_for_move(move)) if move is not None else None
+    return {
+        "flagged": move is not None,
+        "move": move.model_dump(mode="json") if move else None,
+        "thresholds": trigger_thresholds(),
+        "card": card.model_dump(mode="json") if card else None,
+    }
 
 
 @app.post("/challenge/{ticker}")
