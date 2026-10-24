@@ -131,3 +131,17 @@ TRIGGER_MIN_VOLUME_MULTIPLE = 1.5
 
 # Window length used when the caller does not give one.
 TRIGGER_DEFAULT_WINDOW_MINUTES = 30
+
+# --- Investigators, TinyFish and pipeline tunables ---------------------------
+# (backend/investigators/, backend/tinyfish/, backend/pipeline.py)
+
+# Hard limit on live TinyFish calls for one investigation (all investigators
+# together). Credits are tight, so the budget raises instead of overspending.
+MAX_TINYFISH_CALLS_PER_INVESTIGATION = 10
+
+# Sherlock: evidence hosted on these domains is an exchange filing (Tier 1);
+# anything else Sherlock finds is company news (Tier 2).
+EXCHANGE_FILING_DOMAINS = ("nseindia.com", "bseindia.com")
+
+# Replay mode reads fixtures/<case>/<this folder>/<investigator>.json.
+REPLAY_SUBDIR = "tinyfish"

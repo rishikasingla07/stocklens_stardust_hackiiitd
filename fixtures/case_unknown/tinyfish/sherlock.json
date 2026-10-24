@@ -1,0 +1,13 @@
+[
+  {
+    "id": "unk-media",
+    "investigator": "sherlock",
+    "source_tier": 2,
+    "verified": true,
+    "source_name": "Market Daily",
+    "url": "https://marketdaily.example/markets/zenith-poly-jumps",
+    "first_public_at": "2026-10-22T11:40:00+05:30",
+    "claim": "Zenith Polymers shares jump 4%; no announcement from the company",
+    "snippet": "Shares of Zenith Polymers rose over 4% in morning trade. The company has not made any disclosure to the exchanges."
+  }
+]

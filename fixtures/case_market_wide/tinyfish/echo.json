@@ -1,0 +1,13 @@
+[
+  {
+    "id": "mkt-social",
+    "investigator": "echo",
+    "source_tier": 3,
+    "verified": false,
+    "source_name": "Public trading forum",
+    "url": "https://tradersforum.example/t/pharma-tariffs",
+    "first_public_at": "2026-10-22T09:50:00+05:30",
+    "claim": "Traders say the whole pharma pack is down on tariff news",
+    "snippet": "entire pharma pack red today, tariff headlines"
+  }
+]

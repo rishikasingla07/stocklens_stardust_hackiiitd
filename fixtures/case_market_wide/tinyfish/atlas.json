@@ -1,0 +1,24 @@
+[
+  {
+    "id": "mkt-media-1",
+    "investigator": "atlas",
+    "source_tier": 2,
+    "verified": true,
+    "source_name": "Market Daily",
+    "url": "https://marketdaily.example/markets/pharma-stocks-fall-tariff",
+    "first_public_at": "2026-10-22T09:20:00+05:30",
+    "claim": "Pharma stocks fall after the US proposes tariffs on imported generic drugs",
+    "snippet": "The pharma index fell over 2% in early trade after overnight reports that the US plans tariffs on imported generics."
+  },
+  {
+    "id": "mkt-media-2",
+    "investigator": "atlas",
+    "source_tier": 2,
+    "verified": true,
+    "source_name": "Dalal Ledger",
+    "url": "https://dalalledger.example/sectors/pharma-tariff-selloff",
+    "first_public_at": "2026-10-22T09:35:00+05:30",
+    "claim": "Indian drugmakers slide on US generic tariff proposal",
+    "snippet": "Export-heavy drugmakers led losses; analysts said the proposal could hit US generic margins across the sector."
+  }
+]
