@@ -3,46 +3,96 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>StockLens</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="mode-plain">
-  <header class="topbar">
-    <a class="brand" href="#/">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <span>
-        <span class="brand-name">StockLens</span>
-        <span class="brand-tag">Why did this NSE stock move?</span>
-      </span>
-    </a>
-    <div class="mode-toggle" role="group" aria-label="Detail level">
-      <button type="button" data-mode="plain" aria-pressed="true">Plain</button>
-      <button type="button" data-mode="expert" aria-pressed="false">Expert</button>
-    </div>
-  </header>
+  <a class="skip-link" href="#investigation">Skip to investigation</a>
 
-  <main>
-    <section id="stocks-view" aria-labelledby="stocks-title">
-      <h1 id="stocks-title">My Stocks</h1>
-      <p class="lede">Stocks with a flagged move can be investigated. Tap one to see why it moved.</p>
-      <div class="stock-columns">
-        <section class="panel" aria-labelledby="holdings-title">
-          <h2 id="holdings-title">Holdings</h2>
-          <ul class="stock-list" id="holdings-list"><li class="muted">Loading…</li></ul>
-        </section>
-        <section class="panel" aria-labelledby="watchlist-title">
-          <h2 id="watchlist-title">Watchlist</h2>
-          <ul class="stock-list" id="watchlist-list"><li class="muted">Loading…</li></ul>
-        </section>
+  <header class="site-header">
+    <div class="header-top">
+      <a class="brand" href="#/" aria-label="StockLens home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text">
+          <span class="brand-name">StockLens</span>
+          <span class="brand-tag">Why did this stock move? Evidence, not guesses.</span>
+        </span>
+      </a>
+      <div class="header-meta">
+        <span class="pill pill-demo">Demo data – times in IST</span>
+        <span class="status" id="mode-status" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text">Checking server…</span>
+        </span>
+      </div>
+    </div>
+
+    <section class="stocks" aria-labelledby="stocks-title">
+      <div class="stocks-head">
+        <h1 id="stocks-title">My Stocks</h1>
+        <p class="stocks-hint">Pick a stock with a flagged move to see why it moved.</p>
+      </div>
+      <div class="stock-groups">
+        <div class="stock-group">
+          <h2 class="group-label" id="holdings-title">Holdings</h2>
+          <ul class="stock-row" id="holdings-list" aria-labelledby="holdings-title">
+            <li class="stock-card is-skeleton" aria-hidden="true"></li>
+            <li class="stock-card is-skeleton" aria-hidden="true"></li>
+            <li class="stock-card is-skeleton" aria-hidden="true"></li>
+            <li class="stock-card is-skeleton" aria-hidden="true"></li>
+          </ul>
+        </div>
+        <div class="stock-group">
+          <h2 class="group-label" id="watchlist-title">Watchlist</h2>
+          <ul class="stock-row" id="watchlist-list" aria-labelledby="watchlist-title">
+            <li class="stock-card is-skeleton" aria-hidden="true"></li>
+            <li class="stock-card is-skeleton" aria-hidden="true"></li>
+            <li class="stock-card is-skeleton" aria-hidden="true"></li>
+          </ul>
+        </div>
       </div>
     </section>
+  </header>
 
-    <section id="card-view" hidden>
-      <a class="back" href="#/">← My Stocks</a>
-      <div id="card-root"></div>
-    </section>
+  <main id="investigation" tabindex="-1" aria-live="polite">
+    <div id="view"></div>
   </main>
+
+  <section class="compare" aria-labelledby="compare-title">
+    <div class="compare-head">
+      <h2 id="compare-title">Compare cases</h2>
+      <p class="compare-hint">Keyboard: press <kbd>1</kbd>, <kbd>2</kbd> or <kbd>3</kbd></p>
+    </div>
+    <div class="compare-row">
+      <button type="button" class="compare-card tone-high" data-ticker="ACMEINFRA" aria-keyshortcuts="1"
+        aria-label="Compare case 1: High confidence, ACMEINFRA">
+        <span class="compare-key" aria-hidden="true">1</span>
+        <span class="compare-label">High</span>
+        <span class="compare-ticker">ACMEINFRA</span>
+        <span class="compare-desc">A filing was public before the move.</span>
+      </button>
+      <button type="button" class="compare-card tone-unknown" data-ticker="ZENITHPOLY" aria-keyshortcuts="2"
+        aria-label="Compare case 2: Unknown, ZENITHPOLY">
+        <span class="compare-key" aria-hidden="true">2</span>
+        <span class="compare-label">Unknown</span>
+        <span class="compare-ticker">ZENITHPOLY</span>
+        <span class="compare-desc">Nothing credible was public before the move.</span>
+      </button>
+      <button type="button" class="compare-card tone-medium" data-ticker="ORIONPHARMA" aria-keyshortcuts="3"
+        aria-label="Compare case 3: Market-wide, ORIONPHARMA">
+        <span class="compare-key" aria-hidden="true">3</span>
+        <span class="compare-label">Market-wide</span>
+        <span class="compare-ticker">ORIONPHARMA</span>
+        <span class="compare-desc">The whole sector fell; the market explanation leads.</span>
+      </button>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    StockLens gives evidence-based attributions, not proof and not investment advice.
+  </footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
