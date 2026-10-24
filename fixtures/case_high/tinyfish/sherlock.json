@@ -1,0 +1,24 @@
+[
+  {
+    "id": "high-filing",
+    "investigator": "sherlock",
+    "source_tier": 1,
+    "verified": true,
+    "source_name": "NSE corporate filing",
+    "url": "https://www.nseindia.com/corporate-filings/acmeinfra-2026-10-22-guidance",
+    "first_public_at": "2026-10-22T09:48:00+05:30",
+    "claim": "ACME Infra revises FY27 revenue growth guidance down to 6-8% from 10-12%",
+    "snippet": "The Board has revised the revenue growth guidance for FY27 to 6-8% (earlier 10-12%) on account of delays in two large order executions."
+  },
+  {
+    "id": "high-media",
+    "investigator": "sherlock",
+    "source_tier": 2,
+    "verified": true,
+    "source_name": "Market Daily",
+    "url": "https://marketdaily.example/companies/acme-infra-guidance-cut",
+    "first_public_at": "2026-10-22T10:20:00+05:30",
+    "claim": "ACME Infra cuts FY27 revenue growth guidance to 6-8% from 10-12%",
+    "snippet": "In an exchange filing this morning, ACME Infra lowered its revenue growth outlook, citing slower execution on two large orders."
+  }
+]

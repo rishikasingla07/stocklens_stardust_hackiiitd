@@ -1,0 +1,13 @@
+[
+  {
+    "id": "high-broker",
+    "investigator": "echo",
+    "source_tier": 3,
+    "verified": false,
+    "source_name": "Broker note shared on social",
+    "url": "https://brokerdesk.example/notes/acmeinfra-downgrade",
+    "first_public_at": "2026-10-22T10:34:00+05:30",
+    "claim": "Brokerage downgrades ACME Infra to Sell after guidance cut",
+    "snippet": "We downgrade to SELL, cutting our target price by 18% after the guidance revision."
+  }
+]

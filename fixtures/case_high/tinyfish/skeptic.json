@@ -1,0 +1,13 @@
+[
+  {
+    "id": "high-hint",
+    "investigator": "skeptic",
+    "source_tier": 2,
+    "verified": true,
+    "source_name": "India Biz Wire",
+    "url": "https://indiabizwire.example/acme-infra-investor-call",
+    "first_public_at": "2026-10-15T16:10:00+05:30",
+    "claim": "ACME Infra management hinted at slower order execution on investor call",
+    "snippet": "Management said execution on a couple of large orders was 'running slower than we would like' this quarter."
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "id": "unk-social",
+    "investigator": "echo",
+    "source_tier": 3,
+    "verified": false,
+    "source_name": "Public trading forum",
+    "url": "https://tradersforum.example/t/zenithpoly",
+    "first_public_at": "2026-10-22T11:31:00+05:30",
+    "claim": "Forum users speculate about a possible order win",
+    "snippet": "anyone know why ZENITHPOLY is flying? heard rumours of a big export order"
+  },
+  {
+    "id": "unk-blog",
+    "investigator": "echo",
+    "source_tier": 3,
+    "verified": false,
+    "source_name": "Stock blog",
+    "url": "https://stockblog.example/zenith-polymers-rally",
+    "first_public_at": null,
+    "claim": "Blog says Zenith Polymers may benefit from capacity expansion",
+    "snippet": "Zenith's new plant could be a trigger for the stock."
+  }
+]
