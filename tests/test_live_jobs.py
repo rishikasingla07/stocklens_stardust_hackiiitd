@@ -214,3 +214,16 @@ def test_key_is_never_in_any_response(monkeypatch, tmp_path):
     assert fake.requests and all(req.headers["X-API-Key"] == SECRET for req in fake.requests)
     for text in seen:
         assert SECRET not in text
+
+
+# --- history ---------------------------------------------------------------------
+
+def test_finished_live_job_is_saved_to_history(monkeypatch, tmp_path):
+    use_fake(monkeypatch, tmp_path)
+    body = wait_for(start().json()["job_id"])
+    assert body["status"] == "done"
+    [row] = client.get("/history").json()
+    assert (row["ticker"], row["source"], row["mode"]) == ("LIVETEST", "live", "live")
+    stored = client.get(f"/history/{row['id']}").json()
+    assert stored == body["card"]
+    assert SECRET not in client.get(f"/history/{row['id']}").text

@@ -3,6 +3,7 @@
 import json
 import logging
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import partial
 from html import escape
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from backend import config, live_jobs, pipeline
 from backend.consensus.engine import build_card
+from backend.db import history
 from backend.llm.explain import fill_explanation, offline_explanation
 from backend.market import data as market_data
 from backend.models import IST, Card, Evidence, Move
@@ -22,7 +24,13 @@ from backend.tinyfish.client import TinyFishClient
 
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="StockLens")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    history.init()  # create the database and table if missing
+    yield
+
+
+app = FastAPI(title="StockLens", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=config.FRONTEND_DIR), name="static")
 
 
@@ -90,6 +98,15 @@ card_source: Callable[[str], Card | None] = pipeline_card
 challenge_source: Callable[[str], Card | None] = partial(pipeline_card, include_skeptic=True)
 
 
+def save_history(card: Card, source: str, mode: str | None = None,
+                 db_path: Path | None = None) -> None:
+    """Save a produced Card to history. A storage problem never breaks the response."""
+    try:
+        history.save(card, source, mode or ("live" if config.MODE == "live" else "replay"), db_path)
+    except Exception as exc:
+        log.warning("history: could not save %s card for %s (%s)", source, card.ticker, exc)
+
+
 def get_card(ticker: str, source: Callable[[str], Card | None] | None = None) -> Card:
     """The one place routes get a Card from. Raises 404 if no investigation exists."""
     card = (source or card_source)(ticker.upper())
@@ -151,7 +168,9 @@ def stocks() -> dict:
 
 @app.post("/investigate/{ticker}")
 def investigate(ticker: str) -> Card:
-    return get_card(ticker)
+    card = get_card(ticker)
+    save_history(card, "investigate")
+    return card
 
 
 @app.get("/receipt/{ticker}", response_model=None)
@@ -182,6 +201,8 @@ def simulate(ticker: str) -> dict:
                             detail=f"No recorded market data for {ticker}, so the trigger cannot run.")
     move = market_data.get_move(case, ticker)
     card = with_explanation(pipeline.card_for_move(move)) if move is not None else None
+    if card is not None:
+        save_history(card, "simulate")
     return {
         "flagged": move is not None,
         "move": move.model_dump(mode="json") if move else None,
@@ -230,7 +251,9 @@ def live_start(request: LiveStartRequest) -> dict:
         request.volume_multiple, request.sector_pct_change, request.index_pct_change)
     try:
         job = live_jobs.start_job(request.company.strip(), move, with_explanation,
-                                  live_client_factory)
+                                  live_client_factory,
+                                  on_done=partial(save_history, source="live", mode="live",
+                                                  db_path=config.DB_PATH))  # path fixed at start
     except live_jobs.LiveDisabled as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from None
     except live_jobs.LiveBusy as exc:
@@ -249,7 +272,26 @@ def live_job(job_id: str) -> dict:
 @app.post("/challenge/{ticker}")
 def challenge(ticker: str) -> Card:
     """Re-run the investigation with the full Skeptic. Same Card shape as /investigate."""
-    return get_card(ticker, challenge_source)
+    card = get_card(ticker, challenge_source)
+    save_history(card, "challenge")
+    return card
+
+
+# --- History (SQLite) --------------------------------------------------------
+
+@app.get("/history")
+def history_list(ticker: str | None = None, limit: int = history.MAX_LIMIT) -> list[dict]:
+    """Past investigations, newest first, without the stored Card (max 50)."""
+    return history.list_history(ticker, limit)
+
+
+@app.get("/history/{entry_id}")
+def history_entry(entry_id: int) -> Card:
+    """The stored Card for one past investigation, exactly as it was produced (nothing re-runs)."""
+    card = history.get_card(entry_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail=f"No saved investigation with id {entry_id}.")
+    return card
 
 
 # --- Receipt HTML ------------------------------------------------------------

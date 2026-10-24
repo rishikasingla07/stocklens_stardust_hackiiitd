@@ -25,6 +25,8 @@
           data-action="simulate" disabled title="Select a stock first">Simulate move</button>
         <button type="button" class="btn btn-secondary btn-small btn-live" data-action="live"
           title="Search real NSE/BSE filings with TinyFish (uses credits)">Run live investigation</button>
+        <button type="button" class="btn btn-secondary btn-small btn-history" data-action="history"
+          aria-controls="history-drawer" aria-expanded="false">History</button>
         <span class="pill pill-demo">Demo data – times in IST</span>
         <span class="status" id="mode-status" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
@@ -97,6 +99,16 @@
   <footer class="site-footer">
     StockLens gives evidence-based attributions, not proof and not investment advice.
   </footer>
+
+  <div class="drawer-backdrop" id="history-backdrop" data-action="history-close" hidden></div>
+  <aside class="drawer" id="history-drawer" role="dialog" aria-modal="true" aria-labelledby="history-title" hidden>
+    <div class="drawer-head">
+      <h2 class="drawer-title" id="history-title">History</h2>
+      <button type="button" class="btn btn-secondary btn-small" data-action="history-close">Close</button>
+    </div>
+    <p class="drawer-hint">Past investigations, newest first. Opening one shows the saved result; nothing is re-run.</p>
+    <ul class="history-list" id="history-list" aria-live="polite"></ul>
+  </aside>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

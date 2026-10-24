@@ -44,6 +44,9 @@ const state = {
   simulating: null, // run number of the Simulate move request in flight
   live: null, // {ticker, steps, calls_used, agent_calls, max_calls, others}: the live result on screen
   liveStatus: null, // last GET /live/status body (poll interval, call budget)
+  history: [], // GET /history rows, newest first (no card_json)
+  saved: null, // the history row whose saved Card is on screen, if any
+  historyReturnFocus: null, // element to refocus when the History drawer closes
 };
 
 // --- Helpers -----------------------------------------------------------------
@@ -232,12 +235,135 @@ function stockCard(stock) {
         aria-label="Investigate ${esc(stock.ticker)}, ${esc(stock.name)}, ${esc(fmtSigned(stock.change_pct))} today, move flagged">
       ${body}
       <span class="sc-foot"><span class="badge-flag">Move flagged</span></span>
+      ${latestSlot(stock.ticker)}
     </button></li>`;
   }
   return `<li><div class="stock-card is-quiet" aria-label="${esc(stock.ticker)}, ${esc(stock.name)}, no investigation available">
       ${body}
       <span class="sc-foot"><span class="sc-none">No investigation available</span></span>
+      ${latestSlot(stock.ticker)}
     </div></li>`;
+}
+
+// --- History (saved investigations) ------------------------------------------
+
+const SOURCE_LABEL = {
+  investigate: "Investigate", simulate: "Simulate move", challenge: "Challenge This", live: "Live run",
+};
+
+function relTime(iso) {
+  const seconds = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (seconds < 45) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return `${days} ${days === 1 ? "day" : "days"} ago`;
+}
+
+function savedLabel(row) {
+  return row.label === "Unknown" ? "Unknown" : `${row.label} ${row.score}`;
+}
+
+function latestSlot(ticker) {
+  return `<span class="sc-latest" data-latest-for="${esc(ticker)}" hidden></span>`;
+}
+
+/** Fill each stock card's "latest result" chip from state.history. */
+function renderLatestChips() {
+  const latest = {};
+  for (const row of state.history) if (!(row.ticker in latest)) latest[row.ticker] = row;
+  $$("[data-latest-for]").forEach((el) => {
+    const row = latest[el.dataset.latestFor];
+    el.hidden = !row;
+    if (!row) return;
+    el.className = `sc-latest tone-${TONE[row.label] || "unknown"}`;
+    el.textContent = `${savedLabel(row)} – ${relTime(row.created_at)}`;
+    el.title = `Latest saved result: ${savedLabel(row)}, ${fmtWhen(row.created_at)} (${SOURCE_LABEL[row.source] || row.source})`;
+  });
+}
+
+function renderHistoryList() {
+  const list = $("#history-list");
+  if (!list) return;
+  if (!state.history.length) {
+    list.innerHTML = `<li class="history-empty">No saved investigations yet. Investigate a flagged stock and it appears here.</li>`;
+    return;
+  }
+  list.innerHTML = state.history.map((row) => `<li>
+      <button type="button" class="history-item tone-${TONE[row.label] || "unknown"}" data-action="history-open"
+        data-history-id="${esc(row.id)}"
+        aria-label="Open saved result: ${esc(row.ticker)}, ${esc(savedLabel(row))}, ${esc(relTime(row.created_at))}, from ${esc(SOURCE_LABEL[row.source] || row.source)}">
+        <span class="hi-ticker">${esc(row.ticker)}</span>
+        <span class="label-pill hi-label">${esc(row.label === "Unknown" ? "UNKNOWN" : `${row.label.toUpperCase()} · ${row.score}`)}</span>
+        <span class="hi-time" title="${esc(fmtWhen(row.created_at))}">${esc(relTime(row.created_at))}</span>
+        <span class="tag hi-source">${esc(SOURCE_LABEL[row.source] || row.source)}${row.mode === "live" ? " · live" : ""}</span>
+      </button>
+    </li>`).join("");
+}
+
+async function loadHistory() {
+  try {
+    state.history = await api("GET", "/history");
+  } catch {
+    return; // history is a convenience: the rest of the page works without it
+  }
+  renderLatestChips();
+  if (!$("#history-drawer").hidden) renderHistoryList();
+}
+
+function openHistory() {
+  const drawer = $("#history-drawer");
+  state.historyReturnFocus = document.activeElement;
+  renderHistoryList();
+  drawer.hidden = false;
+  $("#history-backdrop").hidden = false;
+  $('[data-action="history"]')?.setAttribute("aria-expanded", "true");
+  $('[data-action="history-close"]', drawer).focus();
+  loadHistory();
+}
+
+function closeHistory() {
+  const drawer = $("#history-drawer");
+  if (drawer.hidden) return;
+  drawer.hidden = true;
+  $("#history-backdrop").hidden = true;
+  $('[data-action="history"]')?.setAttribute("aria-expanded", "false");
+  const back = state.historyReturnFocus;
+  state.historyReturnFocus = null;
+  if (back && back.isConnected) back.focus();
+}
+
+/** Show a saved Card exactly as stored. Nothing is re-run. */
+async function openSaved(id) {
+  const run = ++state.run;
+  state.trigger = null;
+  state.live = null;
+  state.card = null;
+  $("#view").innerHTML = `<p class="loading">Opening saved result…</p>`;
+  let card;
+  try {
+    card = await api("GET", `/history/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (run !== state.run) return;
+    if (err.status === 404) {
+      renderMessage("Saved result not found", "This saved investigation no longer exists.");
+    } else {
+      renderFailure("this saved result", err);
+    }
+    return;
+  }
+  if (run !== state.run) return;
+  if (!state.history.some((row) => String(row.id) === String(id))) await loadHistory();
+  if (run !== state.run) return;
+  const row = state.history.find((r) => String(r.id) === String(id)) || { id, ticker: card.ticker };
+  state.saved = row;
+  state.card = card;
+  state.ticker = card.ticker;
+  document.title = `${card.ticker} (saved) · StockLens`;
+  markSelected();
+  renderResult(card, { animate: false, saved: row });
 }
 
 function renderStockList(el, stocks) {
@@ -249,6 +375,7 @@ async function loadStocks() {
     state.stocks = await api("GET", "/stocks");
     renderStockList($("#holdings-list"), state.stocks.holdings || []);
     renderStockList($("#watchlist-list"), state.stocks.watchlist || []);
+    renderLatestChips();
     markSelected();
   } catch (err) {
     const msg = `<li class="sc-error">Could not load your stocks: ${esc(err.message)}
@@ -679,7 +806,7 @@ function setAsideText(items) {
   return rejected.map((it) => `#${it.n} ${it.e.source_name} (${it.reason})`).join("; ");
 }
 
-function resultCardHtml(card, items, live = null) {
+function resultCardHtml(card, items, live = null, saved = null) {
   const tone = toneOf(card);
   const unknown = card.confidence_label === "Unknown";
   const marketLeads = (card.leading_explanation || "").startsWith(MARKET_PREFIX);
@@ -692,6 +819,7 @@ function resultCardHtml(card, items, live = null) {
       ${live ? `<span class="tag tag-live" title="Sherlock searched TinyFish live">LIVE</span>
         <span class="tag">${esc(liveCallsText(live))}</span>` : ""}
       ${marketLeads ? `<span class="tag tag-market">Market-wide move</span>` : ""}
+      ${saved ? `<span class="tag tag-saved">Saved result</span>` : ""}
     </div>`;
 
   if (unknown) {
@@ -730,11 +858,24 @@ function summaryText(move) {
     `${fmtSigned(move.sector_pct_change, 1)} and the index ${fmtSigned(move.index_pct_change, 1)}.`;
 }
 
-function actionBarHtml(card, live = null) {
+function actionBarHtml(card, live = null, saved = null) {
   const modeToggle = `<div class="mode-toggle" role="group" aria-label="Detail level">
       <button type="button" data-mode="plain" aria-pressed="${state.mode === "plain"}">Plain</button>
       <button type="button" data-mode="expert" aria-pressed="${state.mode === "expert"}">Expert</button>
     </div>`;
+  if (saved) {
+    // Receipt and Challenge This build a fresh Card, so they would not match this saved one.
+    const again = saved.source === "live"
+      ? `<button type="button" class="btn btn-secondary" data-action="live">Run another live investigation</button>`
+      : `<button type="button" class="btn btn-secondary" data-ticker-go="${esc(card.ticker)}">Run a fresh investigation</button>`;
+    return `<div class="action-bar" role="group" aria-label="Investigation actions">
+      ${modeToggle}
+      <div class="action-buttons">
+        <p class="live-note">This is a saved result. Evidence Receipt and Challenge This work on a fresh investigation.</p>
+        ${again}
+      </div>
+    </div>`;
+  }
   if (live) {
     // Receipt and Challenge This rebuild the Card from recorded data, so they would not match a live result.
     return `<div class="action-bar reveal" style="--d:600ms" role="group" aria-label="Investigation actions">
@@ -757,13 +898,18 @@ function actionBarHtml(card, live = null) {
   <div id="skeptic-banner" class="skeptic-slot" role="status" aria-live="polite"></div>`;
 }
 
-function renderResult(card, { animate, challenged = false, live = null } = {}) {
+function renderResult(card, { animate, challenged = false, live = null, saved = null } = {}) {
+  if (!saved) state.saved = null;
   const items = numberedEvidence(card);
   const axis = axisRange(card, items);
   const name = stockName(card.ticker);
   const view = $("#view");
   const trigger = state.trigger && state.trigger.ticker === card.ticker ? state.trigger.html : "";
+  const savedBanner = saved ? `<p class="saved-banner" role="note"><span class="tag tag-saved">Saved result</span>
+      ${saved.created_at ? `Saved ${esc(fmtWhen(saved.created_at))} (${esc(relTime(saved.created_at))})` : "Saved earlier"}${
+      saved.source ? ` from ${esc(SOURCE_LABEL[saved.source] || saved.source)}` : ""}. Shown exactly as stored; nothing was re-run.</p>` : "";
   view.innerHTML = `
+    ${savedBanner}
     ${trigger}
     ${stripHtml(card.ticker, { done: true, challenged, counts: countsByInvestigator(card), live })}
     <div class="result ${animate ? "animate" : ""}">
@@ -788,8 +934,8 @@ function renderResult(card, { animate, challenged = false, live = null } = {}) {
           ${scoreHtml(card)}
         </section>
       </div>
-      ${resultCardHtml(card, items, live)}
-      ${actionBarHtml(card, live)}
+      ${resultCardHtml(card, items, live, saved)}
+      ${actionBarHtml(card, live, saved)}
     </div>`;
   layoutAxis();
   wireEvidenceLinks(view);
@@ -870,6 +1016,7 @@ async function investigate(ticker) {
   if (animate && !(await playStrip(run, countsByInvestigator(card), started))) return;
 
   state.card = card;
+  loadHistory();
   renderResult(card, { animate });
 }
 
@@ -938,6 +1085,7 @@ async function simulate(ticker) {
     $("#view").innerHTML = panel;
     if (!sim.flagged || !sim.card) return;
     state.trigger = { ticker, html: panel };
+    loadHistory();
 
     if (animate) {
       await sleep(started + TRIGGER_PAUSE_MS - performance.now());
@@ -1112,6 +1260,7 @@ async function pollLive(jobId, run, ticker, status) {
     if (job.status === "done" && job.card) {
       state.card = job.card;
       state.live = { ...live, ticker: job.card.ticker };
+      loadHistory();
       renderResult(job.card, { animate: !reducedMotion(), live: state.live });
       return;
     }
@@ -1175,6 +1324,7 @@ async function challenge(ticker, button) {
     const card = await api("POST", `/challenge/${encodeURIComponent(ticker)}`);
     if (run !== state.run) return;
     state.card = card;
+    loadHistory();
     renderResult(card, { animate: !reducedMotion(), challenged: true });
     const slot = $("#skeptic-banner");
     slot.innerHTML = skepticBannerHtml(card, before);
@@ -1209,7 +1359,11 @@ function goLive() {
 
 function route() {
   const match = location.hash.match(/^#\/stock\/([^/]+)$/);
-  if (location.hash === "#/live") {
+  const savedMatch = location.hash.match(/^#\/history\/(\d+)$/);
+  if (savedMatch) {
+    openSaved(savedMatch[1]);
+    $("#investigation").focus({ preventScroll: true });
+  } else if (location.hash === "#/live") {
     document.title = "Live investigation · StockLens";
     openLive();
     $("#investigation").focus({ preventScroll: true });
@@ -1250,6 +1404,21 @@ document.addEventListener("click", (event) => {
   }
   const action = event.target.closest("[data-action]");
   if (!action) return;
+  if (action.dataset.action === "history") {
+    openHistory();
+    return;
+  }
+  if (action.dataset.action === "history-close") {
+    closeHistory();
+    return;
+  }
+  if (action.dataset.action === "history-open") {
+    const hash = `#/history/${action.dataset.historyId}`;
+    closeHistory();
+    if (location.hash === hash) route();
+    else location.hash = hash;
+    return;
+  }
   if (action.dataset.action === "receipt") {
     downloadReceipt(action.dataset.ticker);
     toast("Receipt downloaded. The printable version opened in a new tab.");
@@ -1274,6 +1443,20 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  const drawer = $("#history-drawer");
+  if (drawer && !drawer.hidden) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeHistory();
+    } else if (event.key === "Tab") {
+      const focusable = $$("button, a[href]", drawer).filter((el) => !el.disabled);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+    return; // number shortcuts are off while the drawer is open
+  }
   if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
   const target = event.target;
   if (target.closest && target.closest("input, textarea, select, [contenteditable]")) return;
@@ -1293,4 +1476,9 @@ window.addEventListener("resize", () => {
 window.addEventListener("hashchange", route);
 applyMode();
 let stocksReady = loadStocks();
+loadHistory();
+setInterval(() => {
+  renderLatestChips();
+  if (!$("#history-drawer").hidden) renderHistoryList();
+}, 60000); // keep "N min ago" current
 route();

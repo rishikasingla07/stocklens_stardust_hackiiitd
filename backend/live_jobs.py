@@ -118,8 +118,12 @@ def build_move(ticker: str, move_start_at: datetime, window_minutes: int, pct_ch
 
 
 def start_job(company: str, move: Move, explain: Callable[[Card], Card],
-              client_factory: Callable[[], TinyFishClient] = TinyFishClient) -> LiveJob:
-    """Start one live job in a background thread. Raises LiveDisabled or LiveBusy."""
+              client_factory: Callable[[], TinyFishClient] = TinyFishClient,
+              on_done: Callable[[Card], None] | None = None) -> LiveJob:
+    """Start one live job in a background thread. Raises LiveDisabled or LiveBusy.
+
+    `on_done` is called with the finished Card (e.g. to save it to history).
+    """
     reason = disabled_reason()
     if reason:
         raise LiveDisabled(reason)
@@ -135,13 +139,14 @@ def start_job(company: str, move: Move, explain: Callable[[Card], Card],
             if _jobs[oldest].status in ("queued", "running"):
                 break
             _jobs.pop(oldest)
-    threading.Thread(target=_run, args=(job, move, explain, client_factory),
+    threading.Thread(target=_run, args=(job, move, explain, client_factory, on_done),
                      name=f"live-{job.id}", daemon=True).start()
     return job
 
 
 def _run(job: LiveJob, move: Move, explain: Callable[[Card], Card],
-         client_factory: Callable[[], TinyFishClient]) -> None:
+         client_factory: Callable[[], TinyFishClient],
+         on_done: Callable[[Card], None] | None = None) -> None:
     """Background thread body. Never raises; failures end as status=failed with a safe message."""
     client = None
     try:
@@ -162,6 +167,8 @@ def _run(job: LiveJob, move: Move, explain: Callable[[Card], Card],
         card = explain(card)
         card = card.model_copy(update={"explanation_text": _with_page_outcomes(card, sherlock)})
         _count_calls(job, client)
+        if on_done is not None:
+            on_done(card)  # e.g. save to history; must not fail the job (the caller logs errors)
         job.card = card
         job.step(f"Done: {card.confidence_label}")
         job.status = "done"
