@@ -99,12 +99,13 @@ pytest
 | Part | Status |
 |---|---|
 | Consensus engine, scoring, six hard gates, tests | Done |
-| Trigger engine (price and volume rules) and market data | Built and tested; demo moves currently come from the recorded case files, not the trigger |
+| Trigger engine (price and volume rules) and market data | Done, on recorded market data: it sets the "Move flagged" alerts on My Stocks and runs behind the Simulate move button. The plain Investigate path still takes its move from the recorded case file |
 | API, Evidence Receipt, Challenge This | Done |
 | Website (My Stocks, Investigation Card, Evidence Timeline, Plain/Expert) | Done |
+| History: every Card saved to SQLite, reopened from the History drawer without re-running | Done |
 | Explanations | Done: offline template; optional LLM version built, not tested live |
-| Live Sherlock via TinyFish (search, fetch, agent) | Built and being tested; the demo cases run in replay mode on recorded evidence |
-| Atlas, Echo and Skeptic live, TinyFish Monitor, live market data, database | Not built yet |
+| Run live investigation (Sherlock live via TinyFish search, fetch, agent) | Built and being tested. Needs `STOCKLENS_MODE=live` and a TinyFish key; the move numbers are entered by the user, not taken from market data. Atlas, Echo and Skeptic are not connected live (recorded data only for the demo tickers) |
+| Atlas, Echo and Skeptic live, TinyFish Monitor, live market data | Not built yet |
 | Broker connect, mobile alerts, Hindi, embeddable API | Roadmap |
 
 The three demo cases (ACMEINFRA High, ZENITHPOLY Unknown, ORIONPHARMA
@@ -112,6 +113,15 @@ market-wide) use recorded evidence in replay mode. Live retrieval is connected
 for one investigator (Sherlock).
 
 Overall: about 80% of the hackathon demo scope and about 40% of the full vision.
+
+**Try it**
+
+- Start the app (see [Run](#run)) and open http://127.0.0.1:8000/.
+- Click a stock marked "Move flagged" (or press 1, 2 or 3) to see a recorded investigation.
+- With a flagged stock selected, press **Simulate move** to watch the trigger engine flag the move from recorded prices.
+- Press **Challenge This** to run the full Skeptic against the result.
+- Open **History** to reopen any saved result exactly as it was.
+- Live: set `STOCKLENS_MODE=live` and `TINYFISH_API_KEY` in `.env`, restart, then press **Run live investigation** (uses TinyFish credits, at most 10 calls per run).
 
 ## Layout
 
