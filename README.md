@@ -96,36 +96,22 @@ pytest
 
 ## Status
 
-**Works now (replay mode, offline):**
-- The full flow from recorded evidence to Card: investigators read the
-  recorded evidence for each case from `fixtures/case_*/tinyfish/`, the
-  consensus engine scores it, and the Card is returned.
-- The deterministic consensus engine: timing, independence, market context,
-  scoring and all six gates, with tests.
-- API: `/stocks`, `/investigate/{ticker}`, `/challenge/{ticker}`,
-  `/receipt/{ticker}` (JSON download and printable HTML), `/health`.
-- Website: My Stocks, Investigation Card, Evidence Timeline, Score breakdown,
-  Unknown state, Alternatives and Limits, Plain/Expert toggle, Evidence
-  Receipt and Challenge This. It works offline with no external libraries.
-- Explanations: offline template explanations for every Card. If
-  `LLM_API_KEY` is set, the LLM writes the explanation instead (Anthropic,
-  OpenAI or Gemini), with the offline text as the fallback.
-- Built and tested but **not yet used by the pipeline**: the trigger engine,
-  the market-data reader (recorded, delayed data in
-  `fixtures/market_data.json`), and LLM evidence extraction.
+| Part | Status |
+|---|---|
+| Consensus engine, scoring, six hard gates, tests | Done |
+| Trigger engine (price and volume rules) and market data | Built and tested; demo moves currently come from the recorded case files, not the trigger |
+| API, Evidence Receipt, Challenge This | Done |
+| Website (My Stocks, Investigation Card, Evidence Timeline, Plain/Expert) | Done |
+| Explanations | Done: offline template; optional LLM version built, not tested live |
+| Live Sherlock via TinyFish (search, fetch, agent) | Built and being tested; the demo cases run in replay mode on recorded evidence |
+| Atlas, Echo and Skeptic live, TinyFish Monitor, live market data, database | Not built yet |
+| Broker connect, mobile alerts, Hindi, embeddable API | Roadmap |
 
-**Not connected yet:**
-- **Live TinyFish calls.** The client is a stub that raises "not connected";
-  only the per-investigation call budget is in place.
-- **Live gathering for every investigator** (Atlas, Sherlock, Echo and
-  Skeptic). All evidence comes from recorded fixtures, so keep
-  `STOCKLENS_MODE=replay`. Live mode does not work yet.
-- **Live market data and move detection.** Each case's Move comes from its
-  recorded `consensus_input.json`, and the prices on My Stocks are hardcoded
-  demo values.
-- **TinyFish Monitor** (filing alerts and timing checks).
-- **SQLite storage.** `backend/db/schema.sql` is a placeholder and nothing
-  is stored.
+The three demo cases (ACMEINFRA High, ZENITHPOLY Unknown, ORIONPHARMA
+market-wide) use recorded evidence in replay mode. Live retrieval is connected
+for one investigator (Sherlock).
+
+Overall: about 80% of the hackathon demo scope and about 40% of the full vision.
 
 ## Layout
 
