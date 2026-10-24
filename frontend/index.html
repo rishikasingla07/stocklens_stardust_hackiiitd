@@ -6,9 +6,45 @@
   <title>StockLens</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body>
-  <h1>StockLens</h1>
-  <p>Why did this NSE stock move?</p>
+<body class="mode-plain">
+  <header class="topbar">
+    <a class="brand" href="#/">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>
+        <span class="brand-name">StockLens</span>
+        <span class="brand-tag">Why did this NSE stock move?</span>
+      </span>
+    </a>
+    <div class="mode-toggle" role="group" aria-label="Detail level">
+      <button type="button" data-mode="plain" aria-pressed="true">Plain</button>
+      <button type="button" data-mode="expert" aria-pressed="false">Expert</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="stocks-view" aria-labelledby="stocks-title">
+      <h1 id="stocks-title">My Stocks</h1>
+      <p class="lede">Stocks with a flagged move can be investigated. Tap one to see why it moved.</p>
+      <div class="stock-columns">
+        <section class="panel" aria-labelledby="holdings-title">
+          <h2 id="holdings-title">Holdings</h2>
+          <ul class="stock-list" id="holdings-list"><li class="muted">Loading…</li></ul>
+        </section>
+        <section class="panel" aria-labelledby="watchlist-title">
+          <h2 id="watchlist-title">Watchlist</h2>
+          <ul class="stock-list" id="watchlist-list"><li class="muted">Loading…</li></ul>
+        </section>
+      </div>
+    </section>
+
+    <section id="card-view" hidden>
+      <a class="back" href="#/">← My Stocks</a>
+      <div id="card-root"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
