@@ -168,3 +168,24 @@ REPLAY_SUBDIR = "tinyfish"
 # score "partly anticipated" (-10), so ACMEINFRA is High 90, not 100. The full
 # Skeptic (counter-evidence) still runs only on "Challenge This".
 DEFAULT_INCLUDE_EARLIER_HINTS = True
+
+# Investigators that really go live when MODE == "live". Every other
+# investigator keeps reading replay fixtures, even in live mode.
+LIVE_INVESTIGATORS = ("sherlock",)
+
+# TinyFish endpoints, from docs.tinyfish.ai (search-api.md, fetch-api.md).
+TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai"
+TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai"
+
+# Client timeout per request. The Fetch docs ask for at least 150 s so their
+# 120 s server-side ceiling comes back as a clean error, not a hang.
+TINYFISH_TIMEOUT_SECONDS = 150
+
+# Every real TinyFish response is saved here and reused for an identical
+# request, so we never pay twice. Git-ignored.
+TINYFISH_CACHE_DIR = FIXTURES_DIR / "live_cache"
+
+# Live Sherlock: search this many days back from the move day, and fetch at
+# most this many pages on EXCHANGE_FILING_DOMAINS.
+SHERLOCK_LOOKBACK_DAYS = 2
+SHERLOCK_MAX_FETCHES = 2

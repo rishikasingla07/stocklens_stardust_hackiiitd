@@ -8,3 +8,4 @@ node_modules/
 .DS_Store
 Archive.zip
 .vscode/
+fixtures/live_cache/
