@@ -131,3 +131,20 @@ TRIGGER_MIN_VOLUME_MULTIPLE = 1.5
 
 # Window length used when the caller does not give one.
 TRIGGER_DEFAULT_WINDOW_MINUTES = 30
+
+# --- LLM settings (backend/llm/) ---------------------------------------------
+# LLM_API_KEY is read in the Runtime section above. Empty key = offline
+# templates only (explain) and no extraction.
+
+# anthropic | openai | gemini
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").strip().lower()
+
+# Default model per provider. openai and gemini have no default: set LLM_MODEL.
+LLM_DEFAULT_MODELS = {"anthropic": "claude-opus-5-5"}
+LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or LLM_DEFAULT_MODELS.get(LLM_PROVIDER, "")
+
+# Seconds to wait for one LLM reply before giving up (explain then falls back offline).
+LLM_TIMEOUT_SECONDS = 60
+
+# Output token ceiling per call (includes thinking tokens on models that think).
+LLM_MAX_TOKENS = 16000
