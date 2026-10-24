@@ -118,3 +118,16 @@ MARKET_SHARE_LEVELS = [
 CARD_LIMITS = [
     "An attribution backed by evidence, not proof of causation. Not investment advice.",
 ]
+
+# --- Trigger engine tunables (backend/trigger/) ------------------------------
+# A move is flagged only when BOTH thresholds pass. Set low enough that all
+# three demo fixtures trigger (case_market_wide is -2.6% on 1.8x volume).
+
+# Minimum absolute percent change over the window (rises and falls).
+TRIGGER_MIN_PCT_CHANGE = 2.5
+
+# Minimum window volume divided by normal volume for a window of the same length.
+TRIGGER_MIN_VOLUME_MULTIPLE = 1.5
+
+# Window length used when the caller does not give one.
+TRIGGER_DEFAULT_WINDOW_MINUTES = 30
