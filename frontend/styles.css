@@ -391,6 +391,63 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
 .trigger-panel.is-checking .trigger-text { color: var(--muted); font-weight: 500; }
 .trigger-sub { margin-top: var(--s1); color: var(--muted); font-size: 0.85rem; }
 
+/* --- Live investigation (form, steps, badge) ---------------------------------------- */
+
+.tag-live {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.12);
+  letter-spacing: 0.06em;
+  font-weight: 800;
+}
+.live-panel {
+  padding: var(--s5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.live-title { display: flex; align-items: center; gap: var(--s3); font-size: 1.35rem; font-weight: 800; }
+.live-intro { margin-top: var(--s3); max-width: 48rem; color: var(--muted); }
+.live-warning {
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  font-size: 0.9rem;
+}
+.live-warning strong { color: var(--amber); }
+.live-form { margin-top: var(--s5); }
+.lf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: var(--s4); }
+.lf-field { display: flex; flex-direction: column; gap: var(--s1); }
+.lf-label { font-size: 0.85rem; font-weight: 700; }
+.lf-hint { color: var(--faint); font-size: 0.78rem; }
+.lf-field input {
+  min-height: 2.6rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-sunk);
+  color: var(--text);
+  font: inherit;
+  color-scheme: dark;
+}
+.lf-field input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.lf-error { margin-top: var(--s4); color: var(--red); font-weight: 600; }
+.lf-actions { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s5); }
+.live-steps {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s4) 0 0;
+  padding: var(--s3) var(--s4) var(--s3) var(--s6);
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.live-steps li.is-current { color: var(--text); font-weight: 600; }
+.live-steps li.is-current::after { content: " …"; }
+.live-note { margin: 0; color: var(--faint); font-size: 0.85rem; align-self: center; }
+
 /* --- Investigation strip ------------------------------------------------------------ */
 
 .strip {
@@ -956,7 +1013,7 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
   }
   html { font-size: 11pt; }
   body { background: #fff; color: #000; }
-  .skip-link, .header-meta, .stocks, .compare, .strip, .trigger-panel, .action-bar, .toast { display: none !important; }
+  .skip-link, .header-meta, .stocks, .compare, .strip, .trigger-panel, .live-panel, .action-bar, .toast { display: none !important; }
   .site-header, main, .compare, .site-footer { max-width: none; padding-left: 0; padding-right: 0; }
   main { padding-top: var(--s4); }
   .panels { grid-template-columns: 1fr; }

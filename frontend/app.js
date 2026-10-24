@@ -42,6 +42,8 @@ const state = {
   run: 0, // bumps on every navigation so stale responses are dropped
   trigger: null, // {ticker, html}: trigger panel kept above a simulated result
   simulating: null, // run number of the Simulate move request in flight
+  live: null, // {ticker, steps, calls_used, agent_calls, max_calls, others}: the live result on screen
+  liveStatus: null, // last GET /live/status body (poll interval, call budget)
 };
 
 // --- Helpers -----------------------------------------------------------------
@@ -131,10 +133,28 @@ function describeGap(minutes) {
   return "exactly when the move began";
 }
 
-async function api(method, path) {
+/** Readable text from a FastAPI error body: a string detail, or a 422 list of field errors. */
+function errorDetail(body) {
+  if (!body) return "";
+  if (typeof body.detail === "string") return body.detail;
+  if (Array.isArray(body.detail)) {
+    return body.detail.map((d) => {
+      const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : "";
+      return `${field ? `${field}: ` : ""}${d.msg || "invalid"}`;
+    }).join("; ");
+  }
+  return "";
+}
+
+async function api(method, path, json) {
   let res;
   try {
-    res = await fetch(path, { method, headers: { Accept: "application/json" } });
+    const options = { method, headers: { Accept: "application/json" } };
+    if (json !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(json);
+    }
+    res = await fetch(path, options);
   } catch {
     const err = new Error("The StockLens server could not be reached.");
     err.status = 0;
@@ -143,7 +163,7 @@ async function api(method, path) {
   let body = null;
   try { body = await res.json(); } catch { /* non-JSON body */ }
   if (!res.ok) {
-    const err = new Error((body && typeof body.detail === "string" && body.detail) || `Request failed (${res.status})`);
+    const err = new Error(errorDetail(body) || `Request failed (${res.status})`);
     err.status = res.status;
     throw err;
   }
@@ -318,12 +338,33 @@ function honestyLabel() {
   return "";
 }
 
-function stripHtml(ticker, { done = false, challenged = false, counts = null } = {}) {
+/** "3 of 10 TinyFish calls (1 Agent)" for a live job. */
+function liveCallsText(live) {
+  const max = live.max_calls ? ` of ${live.max_calls}` : "";
+  return `${live.calls_used}${max} TinyFish calls (${live.agent_calls} Agent)`;
+}
+
+/** Investigator chip for a live run: Sherlock is live; the others use replay data or are not connected. */
+function liveChip(inv, done, n, live) {
+  if (inv.id === "sherlock") {
+    if (!done) return ["is-searching", "searching live…"];
+    return [n ? "is-found" : "is-empty", n ? `found ${plural(n, "item")} live` : "found nothing live"];
+  }
+  if (live.others === "replay") {
+    if (!done) return ["is-dimmed", "recorded data"];
+    return [n ? "is-found" : "is-empty", n ? `${plural(n, "item")} (recorded)` : "nothing (recorded)"];
+  }
+  return ["is-dimmed", live.others ? "not connected live" : "waiting…"];
+}
+
+function stripHtml(ticker, { done = false, challenged = false, counts = null, live = null } = {}) {
   const chips = INVESTIGATORS.map((inv) => {
     const n = counts ? counts[inv.id] : null;
     let cls = "is-searching";
     let text = "searching…";
-    if (inv.id === "skeptic" && !challenged) {
+    if (live) {
+      [cls, text] = liveChip(inv, done, n, live);
+    } else if (inv.id === "skeptic" && !challenged) {
       cls = "is-dimmed";
       text = "runs on Challenge This";
     } else if (done) {
@@ -337,14 +378,19 @@ function stripHtml(ticker, { done = false, challenged = false, counts = null } =
         <span class="inv-state">${esc(text)}</span>
       </li>`;
   }).join("");
-  const label = honestyLabel();
-  return `<section class="strip ${done ? "is-done" : "is-running"}" aria-label="Investigators">
+  const label = live ? `Live investigation · ${liveCallsText(live)}` : honestyLabel();
+  const steps = live && live.steps.length
+    ? `<ol class="live-steps" aria-label="Live steps">${live.steps.map((s, i) =>
+        `<li class="${!done && i === live.steps.length - 1 ? "is-current" : ""}">${esc(s)}</li>`).join("")}</ol>`
+    : "";
+  return `<section class="strip ${done ? "is-done" : "is-running"} ${live ? "is-live" : ""}" aria-label="Investigators">
     <div class="strip-head">
-      <h2 class="strip-title">${done ? "Investigation complete" : "Investigation in progress"}
+      <h2 class="strip-title">${live ? `<span class="tag tag-live">LIVE</span> ` : ""}${done ? "Investigation complete" : "Investigation in progress"}
         <span class="strip-ticker">${esc(ticker)}</span></h2>
       ${label ? `<span class="strip-honest">${esc(label)}</span>` : ""}
     </div>
     <ol class="inv-row">${chips}</ol>
+    ${steps}
   </section>`;
 }
 
@@ -633,7 +679,7 @@ function setAsideText(items) {
   return rejected.map((it) => `#${it.n} ${it.e.source_name} (${it.reason})`).join("; ");
 }
 
-function resultCardHtml(card, items) {
+function resultCardHtml(card, items, live = null) {
   const tone = toneOf(card);
   const unknown = card.confidence_label === "Unknown";
   const marketLeads = (card.leading_explanation || "").startsWith(MARKET_PREFIX);
@@ -643,6 +689,8 @@ function resultCardHtml(card, items) {
     : "";
   const head = `<div class="rc-head">
       <span class="label-pill tone-${tone}">${esc(pillText(card))}</span>
+      ${live ? `<span class="tag tag-live" title="Sherlock searched TinyFish live">LIVE</span>
+        <span class="tag">${esc(liveCallsText(live))}</span>` : ""}
       ${marketLeads ? `<span class="tag tag-market">Market-wide move</span>` : ""}
     </div>`;
 
@@ -682,12 +730,23 @@ function summaryText(move) {
     `${fmtSigned(move.sector_pct_change, 1)} and the index ${fmtSigned(move.index_pct_change, 1)}.`;
 }
 
-function actionBarHtml(card) {
-  return `<div class="action-bar reveal" style="--d:600ms" role="group" aria-label="Investigation actions">
-    <div class="mode-toggle" role="group" aria-label="Detail level">
+function actionBarHtml(card, live = null) {
+  const modeToggle = `<div class="mode-toggle" role="group" aria-label="Detail level">
       <button type="button" data-mode="plain" aria-pressed="${state.mode === "plain"}">Plain</button>
       <button type="button" data-mode="expert" aria-pressed="${state.mode === "expert"}">Expert</button>
-    </div>
+    </div>`;
+  if (live) {
+    // Receipt and Challenge This rebuild the Card from recorded data, so they would not match a live result.
+    return `<div class="action-bar reveal" style="--d:600ms" role="group" aria-label="Investigation actions">
+      ${modeToggle}
+      <div class="action-buttons">
+        <p class="live-note">Evidence Receipt and Challenge This work on recorded investigations only.</p>
+        <button type="button" class="btn btn-secondary" data-action="live">Run another live investigation</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="action-bar reveal" style="--d:600ms" role="group" aria-label="Investigation actions">
+    ${modeToggle}
     <div class="action-buttons">
       <button type="button" class="btn btn-secondary" data-action="receipt" data-ticker="${esc(card.ticker)}"
         aria-label="Evidence Receipt: download JSON and open a printable page">Evidence Receipt</button>
@@ -698,7 +757,7 @@ function actionBarHtml(card) {
   <div id="skeptic-banner" class="skeptic-slot" role="status" aria-live="polite"></div>`;
 }
 
-function renderResult(card, { animate, challenged = false } = {}) {
+function renderResult(card, { animate, challenged = false, live = null } = {}) {
   const items = numberedEvidence(card);
   const axis = axisRange(card, items);
   const name = stockName(card.ticker);
@@ -706,7 +765,7 @@ function renderResult(card, { animate, challenged = false } = {}) {
   const trigger = state.trigger && state.trigger.ticker === card.ticker ? state.trigger.html : "";
   view.innerHTML = `
     ${trigger}
-    ${stripHtml(card.ticker, { done: true, challenged, counts: countsByInvestigator(card) })}
+    ${stripHtml(card.ticker, { done: true, challenged, counts: countsByInvestigator(card), live })}
     <div class="result ${animate ? "animate" : ""}">
       <div class="summary reveal" style="--d:0ms">
         <h2 class="summary-ticker">${esc(card.ticker)}${name ? ` <span class="summary-name">${esc(name)}</span>` : ""}</h2>
@@ -719,7 +778,9 @@ function renderResult(card, { animate, challenged = false } = {}) {
             ${chartHtml(card, axis)}
             ${axisHtml(card, items, axis)}
           </div>
-          <p class="chart-note">Price shape is illustrative. The move size, window and volume are real; no prices are shown.</p>
+          <p class="chart-note">${live
+            ? "Price shape is illustrative. The move size, window and volume were entered in the live form, not read from market data."
+            : "Price shape is illustrative. The move size, window and volume are real; no prices are shown."}</p>
           ${evidenceListHtml(items)}
         </section>
         <section class="panel score-panel reveal" style="--d:180ms" aria-labelledby="score-title">
@@ -727,8 +788,8 @@ function renderResult(card, { animate, challenged = false } = {}) {
           ${scoreHtml(card)}
         </section>
       </div>
-      ${resultCardHtml(card, items)}
-      ${actionBarHtml(card)}
+      ${resultCardHtml(card, items, live)}
+      ${actionBarHtml(card, live)}
     </div>`;
   layoutAxis();
   wireEvidenceLinks(view);
@@ -781,6 +842,7 @@ async function investigate(ticker) {
   state.ticker = ticker;
   state.card = null;
   state.trigger = null;
+  state.live = null;
   markSelected();
   await stocksReady;
   if (run !== state.run) return;
@@ -854,6 +916,7 @@ async function simulate(ticker) {
   state.ticker = ticker;
   state.card = null;
   state.trigger = null;
+  state.live = null;
   state.simulating = run;
   markSelected();
   try {
@@ -887,6 +950,178 @@ async function simulate(ticker) {
   } finally {
     if (state.simulating === run) state.simulating = null;
     updateSimulateButton();
+  }
+}
+
+// --- Live investigation (Sherlock live via TinyFish) -------------------------------------
+
+const LIVE_MAX_POLL_FAILURES = 3;
+
+/** Current time in IST as a datetime-local value, e.g. "2026-10-24T10:30". */
+function istNowLocal() {
+  return new Date(Date.now() + 330 * 60000).toISOString().slice(0, 16);
+}
+
+function liveField(name, label, input, hint = "") {
+  return `<label class="lf-field" for="lf-${name}">
+      <span class="lf-label">${esc(label)}</span>
+      ${input}
+      ${hint ? `<span class="lf-hint">${esc(hint)}</span>` : ""}
+    </label>`;
+}
+
+function liveFormHtml(status) {
+  const num = (name, step, extra = "") =>
+    `<input id="lf-${name}" name="${name}" type="number" step="${step}" required inputmode="decimal" ${extra}>`;
+  const calls = status && status.max_calls ? `up to ${status.max_calls} calls per run` : "a few calls per run";
+  return `<section class="live-panel" aria-labelledby="live-title">
+    <h2 class="live-title" id="live-title"><span class="tag tag-live">LIVE</span> Run a live investigation</h2>
+    <p class="live-intro">Sherlock searches NSE and BSE filings live with TinyFish and reads one filing with its
+      official timestamp. We have no live market data, so enter the move yourself; the Card will say so.</p>
+    <p class="live-warning" role="note"><strong>This uses TinyFish credits</strong> (${esc(calls)}). Repeating the
+      same run is served from the cache and is free.</p>
+    <form class="live-form" id="live-form" novalidate>
+      <div class="lf-grid">
+        ${liveField("company", "Company", `<input id="lf-company" name="company" type="text" required maxlength="100" autocomplete="off" placeholder="e.g. Infosys">`)}
+        ${liveField("ticker", "NSE ticker", `<input id="lf-ticker" name="ticker" type="text" required maxlength="20" pattern="[A-Za-z0-9&._\\-]+" autocomplete="off" placeholder="e.g. INFY">`)}
+        ${liveField("move_start_at", "Move start (IST)", `<input id="lf-move_start_at" name="move_start_at" type="datetime-local" required value="${esc(istNowLocal())}">`)}
+        ${liveField("pct_change", "Move %", num("pct_change", "0.1", 'placeholder="-5.8"'), "negative for a fall")}
+        ${liveField("volume_multiple", "Volume multiple", num("volume_multiple", "0.1", 'min="0" placeholder="3.1"'), "× normal volume")}
+        ${liveField("sector_pct_change", "Sector %", num("sector_pct_change", "0.1", 'placeholder="-0.7"'))}
+        ${liveField("index_pct_change", "Index %", num("index_pct_change", "0.1", 'placeholder="-0.2"'))}
+      </div>
+      <p class="lf-error" id="lf-error" role="alert" hidden></p>
+      <div class="lf-actions">
+        <button type="submit" class="btn btn-primary" id="lf-submit">Start live investigation</button>
+        <a class="btn btn-secondary" href="#/">Cancel</a>
+      </div>
+    </form>
+  </section>`;
+}
+
+async function openLive() {
+  const run = ++state.run;
+  state.ticker = null;
+  state.card = null;
+  state.trigger = null;
+  state.live = null;
+  markSelected();
+  $("#view").innerHTML = `<p class="loading">Checking whether live investigations are available…</p>`;
+  let status;
+  try {
+    status = await api("GET", "/live/status");
+  } catch (err) {
+    if (run === state.run) {
+      renderMessage("Could not check live mode", `${err.message} You can try again.`,
+        { retry: true, tone: "error" });
+    }
+    return;
+  }
+  if (run !== state.run) return;
+  if (!status.enabled) {
+    renderMessage("Live investigation is off", status.message ||
+      "Live mode is not switched on for this server. The recorded demos still work.");
+    return;
+  }
+  if (status.active_job_id) {
+    toast("A live investigation is already running. Showing its progress.");
+    pollLive(status.active_job_id, run, "", status);
+    return;
+  }
+  $("#view").innerHTML = liveFormHtml(status);
+  $("#lf-company").focus();
+  $("#live-form").dataset.run = String(run);
+  state.liveStatus = status;
+}
+
+function showFormError(message) {
+  const el = $("#lf-error");
+  if (!el) return;
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+async function submitLive(form) {
+  const run = Number(form.dataset.run);
+  if (run !== state.run) return;
+  const value = (name) => form.elements[name].value.trim();
+  const required = ["company", "ticker", "move_start_at", "pct_change", "volume_multiple",
+    "sector_pct_change", "index_pct_change"];
+  const missing = required.filter((name) => !value(name));
+  if (missing.length) { showFormError("Please fill in every field."); return; }
+  const invalid = [...form.elements].find((el) => el.willValidate && !el.checkValidity());
+  if (invalid) {
+    showFormError(`Please check "${invalid.closest("label")?.querySelector(".lf-label")?.textContent || invalid.name}".`);
+    return;
+  }
+  const payload = {
+    company: value("company"),
+    ticker: value("ticker").toUpperCase(),
+    move_start_at: `${value("move_start_at")}:00+05:30`,
+    pct_change: Number(value("pct_change")),
+    volume_multiple: Number(value("volume_multiple")),
+    sector_pct_change: Number(value("sector_pct_change")),
+    index_pct_change: Number(value("index_pct_change")),
+  };
+  const button = $("#lf-submit");
+  button.disabled = true;
+  button.textContent = "Starting…";
+  showFormError("");
+  try {
+    const { job_id: jobId } = await api("POST", "/live/start", payload);
+    if (run !== state.run) return;
+    pollLive(jobId, run, payload.ticker, state.liveStatus);
+  } catch (err) {
+    if (run !== state.run) return;
+    button.disabled = false;
+    button.textContent = "Start live investigation";
+    if (err.status === 403) {
+      renderMessage("Live investigation is off", err.message);
+    } else {
+      showFormError(err.message);
+    }
+  }
+}
+
+/** Poll GET /live/{job_id} until it is done or failed, showing the real steps in the strip. */
+async function pollLive(jobId, run, ticker, status) {
+  const every = Math.max(1, Number(status && status.poll_seconds) || 2) * 1000;
+  const maxCalls = status && status.max_calls;
+  let failures = 0;
+  while (run === state.run) {
+    let job;
+    try {
+      job = await api("GET", `/live/${encodeURIComponent(jobId)}`);
+      failures = 0;
+    } catch (err) {
+      if (run !== state.run) return;
+      failures += 1;
+      if (err.status === 404 || failures >= LIVE_MAX_POLL_FAILURES) {
+        renderMessage("Lost track of the live investigation",
+          `${err.message} Press "Run live investigation" to check on it again.`, { tone: "error" });
+        return;
+      }
+      await sleep(every);
+      continue;
+    }
+    if (run !== state.run) return;
+    const live = { steps: job.steps || [], calls_used: job.calls_used, agent_calls: job.agent_calls,
+      max_calls: maxCalls, others: job.others };
+    const shownTicker = job.card ? job.card.ticker : job.ticker || ticker;
+
+    if (job.status === "done" && job.card) {
+      state.card = job.card;
+      state.live = { ...live, ticker: job.card.ticker };
+      renderResult(job.card, { animate: !reducedMotion(), live: state.live });
+      return;
+    }
+    if (job.status === "failed") {
+      renderMessage("The live investigation failed",
+        `${job.error || "Unknown error."} No evidence was invented; you can try again.`, { tone: "error" });
+      return;
+    }
+    $("#view").innerHTML = stripHtml(shownTicker, { live });
+    await sleep(every);
   }
 }
 
@@ -967,9 +1202,18 @@ function go(ticker) {
   else location.hash = hash;
 }
 
+function goLive() {
+  if (location.hash === "#/live") route(); // already there: start over
+  else location.hash = "#/live";
+}
+
 function route() {
   const match = location.hash.match(/^#\/stock\/([^/]+)$/);
-  if (match) {
+  if (location.hash === "#/live") {
+    document.title = "Live investigation · StockLens";
+    openLive();
+    $("#investigation").focus({ preventScroll: true });
+  } else if (match) {
     let ticker;
     try { ticker = decodeURIComponent(match[1]).toUpperCase(); } catch { ticker = match[1].toUpperCase(); }
     document.title = `${ticker} · StockLens`;
@@ -984,6 +1228,7 @@ function route() {
     state.ticker = null;
     state.card = null;
     state.trigger = null;
+    state.live = null;
     document.title = "StockLens";
     markSelected();
     renderHome();
@@ -1012,10 +1257,19 @@ document.addEventListener("click", (event) => {
     challenge(action.dataset.ticker, action);
   } else if (action.dataset.action === "simulate") {
     simulate(state.ticker);
+  } else if (action.dataset.action === "live") {
+    goLive();
   } else if (action.dataset.action === "retry") {
     route();
   } else if (action.dataset.action === "reload-stocks") {
     stocksReady = loadStocks();
+  }
+});
+
+document.addEventListener("submit", (event) => {
+  if (event.target.id === "live-form") {
+    event.preventDefault();
+    submitLive(event.target);
   }
 });
 

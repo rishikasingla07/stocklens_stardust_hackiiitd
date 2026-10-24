@@ -213,3 +213,13 @@ EXCHANGE_PAGE_TIMES_ARE_IST = True
 # stops at the first one accepted. A page rejected (e.g. date only, no time of
 # day) moves on to the next, up to this many pages.
 SHERLOCK_MAX_PAGES = 3
+
+# --- Live investigation jobs (backend/live_jobs.py, /live routes) ------------
+# "Run live investigation" runs Sherlock live in a background thread. Only one
+# job runs at a time; finished jobs are kept in memory for polling.
+
+# How many finished jobs to keep (oldest are dropped first).
+LIVE_JOBS_KEPT = 20
+
+# How often the frontend polls GET /live/{job_id}, in seconds.
+LIVE_POLL_SECONDS = 2

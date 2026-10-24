@@ -11,12 +11,14 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from backend import config, pipeline
+from backend import config, live_jobs, pipeline
 from backend.consensus.engine import build_card
 from backend.llm.explain import fill_explanation, offline_explanation
 from backend.market import data as market_data
 from backend.models import IST, Card, Evidence, Move
+from backend.tinyfish.client import TinyFishClient
 
 log = logging.getLogger(__name__)
 
@@ -186,6 +188,62 @@ def simulate(ticker: str) -> dict:
         "thresholds": trigger_thresholds(),
         "card": card.model_dump(mode="json") if card else None,
     }
+
+
+# --- Live investigation (Sherlock live, background job) ---------------------
+
+class LiveStartRequest(BaseModel):
+    """User-supplied move: we have no live market data, so the numbers come from the form."""
+    company: str = Field(min_length=1, max_length=100)
+    ticker: str = Field(min_length=1, max_length=20, pattern=r"^[A-Za-z0-9&._-]+$")
+    move_start_at: datetime  # ISO; read as IST if it has no time zone
+    pct_change: float = Field(ge=-100, le=1000)
+    volume_multiple: float = Field(ge=0, le=1000)
+    sector_pct_change: float = Field(ge=-100, le=1000)
+    index_pct_change: float = Field(ge=-100, le=1000)
+    window_minutes: int = Field(default=config.TRIGGER_DEFAULT_WINDOW_MINUTES, ge=1, le=375)
+
+
+# Swap point for tests: builds the TinyFish client for each live job.
+live_client_factory: Callable[[], TinyFishClient] = TinyFishClient
+
+
+@app.get("/live/status")
+def live_status() -> dict:
+    """Whether live runs are allowed, and the running job if there is one."""
+    reason = live_jobs.disabled_reason()
+    active = live_jobs.active_job()
+    return {
+        "enabled": reason is None,
+        "message": reason,
+        "active_job_id": active.id if active else None,
+        "poll_seconds": config.LIVE_POLL_SECONDS,
+        "max_calls": config.MAX_TINYFISH_CALLS_PER_INVESTIGATION,
+    }
+
+
+@app.post("/live/start")
+def live_start(request: LiveStartRequest) -> dict:
+    """Start one live investigation in the background. 403 if live is off, 409 if one is running."""
+    move = live_jobs.build_move(
+        request.ticker, request.move_start_at, request.window_minutes, request.pct_change,
+        request.volume_multiple, request.sector_pct_change, request.index_pct_change)
+    try:
+        job = live_jobs.start_job(request.company.strip(), move, with_explanation,
+                                  live_client_factory)
+    except live_jobs.LiveDisabled as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except live_jobs.LiveBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return {"job_id": job.id}
+
+
+@app.get("/live/{job_id}")
+def live_job(job_id: str) -> dict:
+    job = live_jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No live investigation with that id.")
+    return job.to_dict()
 
 
 @app.post("/challenge/{ticker}")

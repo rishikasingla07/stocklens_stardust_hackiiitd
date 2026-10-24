@@ -14,6 +14,7 @@ day) moves on to the next, up to SHERLOCK_MAX_PAGES; it stops at the first
 accepted page. Never invents evidence.
 """
 
+from collections.abc import Callable
 from datetime import timedelta
 
 from backend import config
@@ -27,10 +28,13 @@ class Sherlock(Investigator):
     name = "sherlock"
 
     def __init__(self, client: TinyFishClient | None = None, mode: str | None = None,
-                 company: str | None = None):
+                 company: str | None = None, progress: Callable[[str], None] | None = None):
         super().__init__(client, mode)
         self.company = company  # search by company name if given, else by ticker
         self.time_sources: dict[str, str | None] = {}  # evidence id -> Agent's time_source
+        self.progress = progress or (lambda message: None)  # told about each live stage
+        self.page_outcomes: list[tuple[str, str]] = []  # (url, "kept" or why it was rejected)
+        self.stopped: str | None = None  # why the live path stopped early, if it did
 
     async def gather_live(self, move: Move) -> Report:
         """Search for filings, then read each with the Agent. Always returns a Report, never raises."""
@@ -43,6 +47,8 @@ class Sherlock(Investigator):
             await self._search_and_extract(move, evidence, notes)
         except (TinyFishError, CallBudgetExceeded) as exc:
             notes.append(f"live stopped: {exc}")
+            self.stopped = str(exc)
+            self.progress(f"Live search stopped: {exc}")
         notes.append(f"calls used {self.client.budget.used}/{self.client.budget.limit}")
         return Report(investigator=self.name, evidence=evidence, notes="; ".join(notes))
 
@@ -50,6 +56,7 @@ class Sherlock(Investigator):
                                   notes: list[str]) -> None:
         name = self.company or move.ticker
         day = move.move_start_at.date()
+        self.progress("Searching for filings")
         found = await self.client.search(
             f"{name} corporate announcement filing NSE BSE",
             after_date=(day - timedelta(days=config.SHERLOCK_LOOKBACK_DAYS)).isoformat(),
@@ -61,6 +68,7 @@ class Sherlock(Investigator):
                                   if r.get("url") and is_exchange_filing(r["url"])))
         pages = urls[:config.SHERLOCK_MAX_PAGES]
         notes.append(f"live: {len(results)} search result(s), {len(urls)} on exchange domains")
+        self.progress(f"Found {len(results)} search result(s), {len(urls)} on NSE/BSE")
         if not pages:
             notes.append("no exchange filing found to read")
             return
@@ -68,18 +76,26 @@ class Sherlock(Investigator):
         rejected: list[str] = []
         read = 0
         try:
-            for url in pages:
+            for i, url in enumerate(pages, 1):
                 read += 1
+                self.progress(f"Reading filing {i}")
                 try:
-                    result = await extract_filing(self.client, url, name, move)
+                    result = await extract_filing(self.client, url, name, move, self.progress)
                 except TinyFishError as exc:
                     rejected.append(f"{url}: {exc}")
+                    self.page_outcomes.append((url, str(exc)))
+                    self.progress(f"Filing {i} rejected: {exc}")
                     continue
                 if result.evidence is None:
                     rejected.append(f"{url}: {result.reason} (time_source: {result.time_source!r})")
+                    self.page_outcomes.append((url, result.reason))
+                    self.progress(f"Filing {i} rejected: {result.reason}")
                     continue
                 evidence.append(result.evidence)
                 self.time_sources[result.evidence.id] = result.time_source
+                self.page_outcomes.append((url, "kept"))
+                self.progress(f"Filing {i} accepted: public at "
+                              f"{result.evidence.first_public_at.strftime('%d %b %Y %H:%M IST')}")
                 break  # first accepted filing is enough
         finally:
             notes.append(f"pages found {len(pages)}, read {read}, extracted {len(evidence)}, "

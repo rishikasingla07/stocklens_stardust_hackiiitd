@@ -11,6 +11,7 @@ snippet). Everything that decides trust is done here, in code:
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
@@ -149,13 +150,16 @@ async def _verified(client: TinyFishClient, url: str, snippet: str) -> bool:
     return bool(needle) and any(needle in _squash(t) for t in texts)
 
 
-async def extract_filing(client: TinyFishClient, url: str, company: str,
-                         move: Move) -> ExtractResult:
+async def extract_filing(client: TinyFishClient, url: str, company: str, move: Move,
+                         progress: Callable[[str], None] | None = None) -> ExtractResult:
     """Like extract_filing_with_agent, but also says why an item was rejected.
 
+    `progress`, if given, is told about each stage ("Checking the timestamp", ...).
     Raises TinyFishError / CallBudgetExceeded if the Agent call itself fails.
     """
+    report = progress or (lambda message: None)
     answer = await client.agent(url, GOAL.format(company=company), output_schema=FILING_SCHEMA)
+    report("Checking the timestamp")
 
     time_source = answer.get("time_source")
     time_source = time_source.strip() or None if isinstance(time_source, str) else None
@@ -182,6 +186,7 @@ async def extract_filing(client: TinyFishClient, url: str, company: str,
     except ValidationError:
         return ExtractResult(None, "invalid evidence", time_source)
 
+    report("Verifying the quoted snippet")
     if await _verified(client, url, evidence.snippet):
         evidence = evidence.model_copy(update={"verified": True})
     return ExtractResult(evidence, "kept", time_source)
