@@ -23,6 +23,8 @@ from backend.db.users import User
 from backend.llm.explain import fill_explanation, offline_explanation
 from backend.market import catalog
 from backend.market import data as market_data
+from backend.market import price_history
+from backend.tinyfish import replay
 from backend.models import IST, Card, Evidence, Move
 from backend.tinyfish.client import TinyFishClient
 
@@ -352,10 +354,14 @@ def investigate(ticker: str, user: User = Depends(current_user)) -> Card:
 
 
 @app.get("/receipt/{ticker}", response_model=None)
-def receipt(ticker: str, format: str = "json",
+def receipt(ticker: str, format: str = "json", move_start_at: datetime | None = None,
             user: User = Depends(current_user)) -> JSONResponse | HTMLResponse:
-    """Evidence Receipt: ?format=json (default) downloads a file, ?format=html is printable."""
-    card = get_card(ticker)
+    """Evidence Receipt: ?format=json (default) downloads a file, ?format=html is printable.
+
+    ?move_start_at=... gives the Receipt for one move from the price history instead
+    of the ticker's recorded case.
+    """
+    card = move_card(ticker, move_start_at) if move_start_at else get_card(ticker)
     generated_at = datetime.now(IST)
     if format == "html":
         return HTMLResponse(_receipt_html(card, generated_at))
@@ -388,6 +394,72 @@ def simulate(ticker: str, user: User = Depends(current_user)) -> dict:
         "thresholds": trigger_thresholds(),
         "card": card.model_dump(mode="json") if card else None,
     }
+
+
+# --- One-month price history and its unusual moves -------------------------
+# RECORDED DEMO DATA, NOT REAL PRICES (fixtures/price_history.json). These are
+# not the /history routes, which are saved investigations.
+
+PRICE_HISTORY_NOTE = "Recorded demo data, not real prices."
+
+
+def _series_or_404(ticker: str) -> price_history.Series:
+    series = price_history.get_series(ticker)
+    if series is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No price history for {ticker.upper()} in this demo.")
+    return series
+
+
+def _has_recorded_evidence(move: Move) -> bool:
+    found = replay.find_case(move.ticker)
+    return found is not None and found[1].move_start_at == move.move_start_at
+
+
+@app.get("/price-history/{ticker}")
+def price_history_route(ticker: str, user: User = Depends(current_user)) -> dict:
+    """One month of bars and the unusual moves the trigger rules find in it (oldest first)."""
+    series = _series_or_404(ticker)
+    moves = []
+    for m in price_history.detect_moves(series):
+        row = m.to_dict()
+        row["has_recorded_evidence"] = _has_recorded_evidence(m.move)
+        moves.append(row)
+    return {
+        "ticker": series.ticker,
+        "name": series.name,
+        "sector": series.sector,
+        "note": PRICE_HISTORY_NOTE,
+        "thresholds": {**trigger_thresholds(),
+                       "max_window_minutes": config.TRIGGER_DEFAULT_WINDOW_MINUTES
+                       * config.PRICE_HISTORY_WINDOW_FACTOR},
+        "bars": [{"at": b.at.isoformat(), "price": b.price, "volume": b.volume} for b in series.bars],
+        "moves": moves,
+    }
+
+
+class MoveRequest(BaseModel):
+    move_start_at: datetime  # must be the start of a detected move; read as IST if no time zone
+
+
+def move_card(ticker: str, move_start_at: datetime) -> Card:
+    """The Card for one detected move: its Move goes through the unchanged pipeline and engine."""
+    if move_start_at.tzinfo is None:
+        move_start_at = move_start_at.replace(tzinfo=IST)
+    series = _series_or_404(ticker)
+    found = price_history.find_move(series, move_start_at)
+    if found is None:
+        raise HTTPException(status_code=404, detail=(
+            f"No unusual move for {series.ticker} starts at {move_start_at.isoformat()}."))
+    return with_explanation(pipeline.card_for_move(found.move))
+
+
+@app.post("/investigate-move/{ticker}")
+def investigate_move(ticker: str, body: MoveRequest, user: User = Depends(current_user)) -> Card:
+    """Investigate one unusual move from the price history. Saved to history as "investigate"."""
+    card = move_card(ticker, body.move_start_at)
+    save_history(card, "investigate", user_id=user.id)
+    return card
 
 
 # --- Live investigation (Sherlock live, background job) ---------------------

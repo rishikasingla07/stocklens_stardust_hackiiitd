@@ -48,7 +48,13 @@ class Investigator:
         found = replay.find_case(move.ticker)
         if found is None:
             return [], [f"replay: no recorded case for {move.ticker}"]
-        case_dir, _ = found
+        case_dir, recorded = found
+        # Recorded evidence belongs to one move. Any other move of the same stock
+        # (e.g. an older one from the price history) gets none, so the engine
+        # judges it on nothing rather than on someone else's evidence.
+        if recorded.move_start_at != move.move_start_at:
+            return [], [f"replay: no recorded evidence for the move at {move.move_start_at.isoformat()} "
+                        f"({case_dir.name} is for {recorded.move_start_at.isoformat()})"]
         return replay.load_evidence(case_dir, self.name), [f"replay: {case_dir.name}"]
 
     async def gather_live(self, move: Move) -> list[Evidence] | Report:

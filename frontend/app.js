@@ -36,6 +36,9 @@ const state = {
   user: null, // {account_id} once logged in
   stocks: null, // GET /watchlist body: {tickers, stocks: [rows]}
   catalog: null, // GET /catalog rows (loaded when the picker first opens)
+  priceHistory: { ticker: null, data: null, error: null }, // GET /price-history for the selected stock
+  selectedMove: null, // start (ISO) of the move whose Card is on screen, to highlight it in the chart
+  receiptMove: null, // start (ISO) of a move chosen from the history view: its Receipt is for that move
   health: null, // {mode} or null if the server could not be reached
   ticker: null,
   card: null,
@@ -95,7 +98,7 @@ function signClass(value) {
 }
 
 function fmtSigned(value, digits = 2, suffix = "%") {
-  const n = Number(value);
+  const n = Number(Number(value).toFixed(digits)); // sign of the shown value: no "−0.0%"
   const sign = n > 0 ? "+" : n < 0 ? "−" : "";
   return `${sign}${Math.abs(n).toFixed(digits)}${suffix}`;
 }
@@ -394,6 +397,7 @@ async function openSaved(id) {
   state.trigger = null;
   state.live = null;
   state.card = null;
+  state.receiptMove = null;
   $("#view").innerHTML = `<p class="loading">Opening saved result…</p>`;
   let card;
   try {
@@ -414,6 +418,7 @@ async function openSaved(id) {
   state.saved = row;
   state.card = card;
   state.ticker = card.ticker;
+  state.selectedMove = card.move.move_start_at;
   document.title = `${card.ticker} (saved) · StockLens`;
   markSelected();
   renderResult(card, { animate: false, saved: row });
@@ -459,6 +464,7 @@ function markSelected() {
     else el.removeAttribute("aria-current");
   });
   updateSimulateButton();
+  syncPriceHistory();
 }
 
 function updateSimulateButton() {
@@ -480,6 +486,190 @@ function updateSimulateButton() {
           : `Run the trigger engine on ${state.ticker}'s recorded prices`;
     if (hint.textContent !== text) hint.textContent = text; // only changes are announced
   }
+}
+
+// --- One-month price history (recorded demo data) -------------------------------------
+
+const PH_W = 1000; // SVG viewBox width
+const PH_H = 240;  // SVG viewBox height
+const PH_PAD = 14; // top/bottom padding inside the viewBox
+
+/** Show, hide or (re)load the history panel so it always follows state.ticker. */
+function syncPriceHistory() {
+  const section = $("#price-history");
+  if (!section) return;
+  if (!state.user || !state.ticker) {
+    section.hidden = true;
+    state.priceHistory = { ticker: null, data: null, error: null };
+    return;
+  }
+  section.hidden = false;
+  if (state.priceHistory.ticker === state.ticker) {
+    renderPriceHistory(); // same stock: just refresh the highlighted move
+    return;
+  }
+  if (findStock(state.ticker)?.demo_coverage === false) {
+    // A real NSE name with no demo data: say so without asking the server.
+    $("#ph-sub").textContent = `${state.ticker} · one month`;
+    state.priceHistory = { ticker: state.ticker, data: null, error: { status: 404 } };
+    renderPriceHistory();
+    return;
+  }
+  loadPriceHistory(state.ticker);
+}
+
+async function loadPriceHistory(ticker) {
+  state.priceHistory = { ticker, data: null, error: null };
+  $("#ph-sub").textContent = `${ticker} · one month`;
+  $("#ph-body").innerHTML = `<p class="ph-loading">Loading one month of ${esc(ticker)}…</p>`;
+  let data = null;
+  let error = null;
+  try {
+    data = await api("GET", `/price-history/${encodeURIComponent(ticker)}`);
+  } catch (err) {
+    error = err;
+  }
+  if (state.priceHistory.ticker !== ticker) return; // the selection moved on
+  if (error && error.status === 401) return;
+  state.priceHistory = { ticker, data, error };
+  renderPriceHistory();
+}
+
+function phWhen(move) {
+  const start = new Date(move.start_at);
+  const end = new Date(move.end_at);
+  return `${dateFmt.format(start)}, ${timeFmt.format(start)}–${timeFmt.format(end)} IST`;
+}
+
+function phChartHtml(data) {
+  const bars = data.bars;
+  const n = bars.length;
+  const prices = bars.map((b) => b.price);
+  const lo = Math.min(...prices);
+  const hi = Math.max(...prices);
+  const span = hi - lo || 1;
+  const xPct = (i) => (n > 1 ? (i / (n - 1)) * 100 : 50);
+  const x = (i) => (xPct(i) / 100) * PH_W;
+  const y = (p) => PH_PAD + (1 - (p - lo) / span) * (PH_H - 2 * PH_PAD);
+  const line = bars.map((b, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(b.price).toFixed(1)}`).join(" ");
+  const index = Object.fromEntries(bars.map((b, i) => [b.at, i]));
+
+  // Day boundaries: faint gridlines, and at most ~6 date labels.
+  const dayStarts = [];
+  bars.forEach((b, i) => { if (i === 0 || b.at.slice(0, 10) !== bars[i - 1].at.slice(0, 10)) dayStarts.push(i); });
+  const every = Math.max(1, Math.ceil(dayStarts.length / 6));
+  const grid = dayStarts.map((i) => `<line class="ph-grid" x1="${x(i).toFixed(1)}" y1="0" x2="${x(i).toFixed(1)}" y2="${PH_H}"></line>`).join("");
+  // Every other label is "minor" and hidden on narrow screens so the dates never collide.
+  const dates = dayStarts.filter((_, k) => k % every === 0).map((i, k) =>
+    `<span class="ph-date ${xPct(i) > 88 ? "is-end" : ""} ${k % 2 ? "is-minor" : ""}" style="--x:${xPct(i).toFixed(2)}">${esc(shortDateFmt.format(new Date(bars[i].at)))}</span>`).join("");
+
+  const bands = data.moves.map((m) => {
+    const i0 = index[m.start_at];
+    const i1 = index[m.end_at];
+    if (i0 === undefined || i1 === undefined) return "";
+    const selected = state.selectedMove === m.start_at;
+    const label = `${m.direction === "up" ? "Rise" : "Fall"} of ${fmtSigned(m.pct_change, 1)} on ${phWhen(m)}, ` +
+      `${Number(m.volume_multiple).toFixed(1)}× volume. Investigate this move`;
+    return `<button type="button" class="ph-band is-${m.direction} ${selected ? "is-selected" : ""}"
+        data-action="investigate-move" data-move-start="${esc(m.start_at)}"
+        style="--c:${((xPct(i0) + xPct(i1)) / 2).toFixed(3)}; --w:${(xPct(i1) - xPct(i0)).toFixed(3)}"
+        aria-label="${esc(label)}" title="${esc(`${phWhen(m)} · ${fmtSigned(m.pct_change, 1)}`)}"></button>`;
+  }).join("");
+
+  const first = bars[0];
+  const last = bars[n - 1];
+  return `<figure class="ph-chart" aria-label="${esc(`Price of ${data.ticker} from ${dateFmt.format(new Date(first.at))} to ${dateFmt.format(new Date(last.at))}, ${fmtPrice(first.price)} to ${fmtPrice(last.price)}`)}">
+    <div class="ph-plot">
+      <svg viewBox="0 0 ${PH_W} ${PH_H}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        ${grid}
+        <path class="ph-line" d="${line}"></path>
+      </svg>
+      ${bands}
+      <span class="ph-y ph-y-hi">${esc(fmtPrice(hi))}</span>
+      <span class="ph-y ph-y-lo">${esc(fmtPrice(lo))}</span>
+    </div>
+    <div class="ph-dates" aria-hidden="true">${dates}</div>
+  </figure>`;
+}
+
+function phMovesHtml(data) {
+  if (!data.moves.length) {
+    return `<p class="ph-none">No unusual moves this month: no stretch of up to
+      ${esc(data.thresholds.max_window_minutes)} minutes moved ${esc(fmtNumber(data.thresholds.min_pct_change))}% or more
+      on ${esc(fmtNumber(data.thresholds.min_volume_multiple))}× normal volume or more.</p>`;
+  }
+  const rows = [...data.moves].reverse().map((m) => {
+    const selected = state.selectedMove === m.start_at;
+    return `<li class="ph-move is-${m.direction} ${selected ? "is-selected" : ""}" data-move-row="${esc(m.start_at)}">
+      <div class="ph-move-main">
+        <span class="ph-move-when">${esc(phWhen(m))}</span>
+        <span class="ph-move-stats">
+          <span class="ph-move-pct ${m.direction === "up" ? "up" : "down"}">${esc(fmtSigned(m.pct_change, 1))}</span>
+          <span class="ph-move-vol">${esc(Number(m.volume_multiple).toFixed(1))}× volume</span>
+          <span class="ph-move-len">${esc(m.window_minutes)} min</span>
+        </span>
+        <span class="tag ${m.has_recorded_evidence ? "tag-demo" : ""}">${m.has_recorded_evidence
+          ? "Recorded evidence" : "No recorded evidence"}</span>
+      </div>
+      <button type="button" class="btn ${selected ? "btn-primary" : "btn-secondary"} btn-small"
+        data-action="investigate-move" data-move-start="${esc(m.start_at)}"
+        ${selected ? 'aria-current="true"' : ""}>Investigate this move</button>
+    </li>`;
+  }).join("");
+  return `<ol class="ph-moves" aria-label="Unusual moves, newest first">${rows}</ol>`;
+}
+
+function renderPriceHistory() {
+  const body = $("#ph-body");
+  const { ticker, data, error } = state.priceHistory;
+  if (!ticker || (!data && !error)) return;
+  if (error) {
+    body.innerHTML = error.status === 404
+      ? `<p class="ph-empty">No price history for ${esc(ticker)} in this demo. One month of recorded demo prices
+          exists only for the fictional demo stocks.</p>`
+      : `<p class="ph-empty">Could not load the price history: ${esc(error.message)}</p>`;
+    return;
+  }
+  const t = data.thresholds;
+  body.innerHTML = `
+    <div class="ph-head">
+      <span class="tag tag-recorded">${esc(data.note)}</span>
+      <span class="ph-rule">Highlighted: the trigger rules flag ${esc(fmtNumber(t.min_pct_change))}% or more within
+        ${esc(t.max_window_minutes)} min on ${esc(fmtNumber(t.min_volume_multiple))}× normal volume. Click a band or a
+        move to investigate it.</span>
+    </div>
+    ${phChartHtml(data)}
+    ${phMovesHtml(data)}`;
+}
+
+/** Investigate one move from the history view; shows its Card in the usual investigation view. */
+async function investigateMove(ticker, start) {
+  const run = ++state.run;
+  state.card = null;
+  state.trigger = null;
+  state.live = null;
+  state.selectedMove = start;
+  state.receiptMove = start;
+  markSelected();
+  const cardRequest = api("POST", `/investigate-move/${encodeURIComponent(ticker)}`, { move_start_at: start })
+    .then((card) => ({ card }), (error) => ({ error }));
+  await healthReady;
+  if (run !== state.run) return;
+  const animate = !reducedMotion();
+  const started = performance.now();
+  $("#view").innerHTML = animate ? stripHtml(ticker)
+    : `<p class="loading">Loading the investigation for ${esc(ticker)}…</p>`;
+  const main = $("#investigation");
+  if (main.getBoundingClientRect().top > window.innerHeight * 0.6) {
+    main.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
+  }
+  const { card, error } = await cardRequest;
+  if (run !== state.run) return;
+  if (error) { renderFailure(ticker, error); return; }
+  if (animate && !(await playStrip(run, countsByInvestigator(card), started))) return;
+  state.card = card;
+  loadHistory();
+  renderResult(card, { animate });
 }
 
 // --- Evidence model ------------------------------------------------------------
@@ -952,6 +1142,8 @@ function actionBarHtml(card, live = null, saved = null) {
     ${modeToggle}
     <div class="action-buttons">
       <button type="button" class="btn btn-primary" data-action="receipt" data-ticker="${esc(card.ticker)}"
+        ${state.receiptMove && state.receiptMove === card.move.move_start_at
+          ? `data-move-start="${esc(state.receiptMove)}"` : ""}
         aria-label="Evidence Receipt: download JSON and open a printable page">Evidence Receipt</button>
     </div>
   </div>`;
@@ -1058,6 +1250,8 @@ async function investigate(ticker) {
   state.card = null;
   state.trigger = null;
   state.live = null;
+  state.selectedMove = null;
+  state.receiptMove = null;
   markSelected();
   await stocksReady;
   if (run !== state.run) return;
@@ -1089,6 +1283,8 @@ async function investigate(ticker) {
   if (animate && !(await playStrip(run, countsByInvestigator(card), started))) return;
 
   state.card = card;
+  state.selectedMove = card.move.move_start_at; // highlight this move in the history chart
+  renderPriceHistory();
   loadHistory();
   renderResult(card, { animate });
 }
@@ -1137,6 +1333,8 @@ async function simulate(ticker) {
   state.card = null;
   state.trigger = null;
   state.live = null;
+  state.selectedMove = null;
+  state.receiptMove = null;
   state.simulating = run;
   markSelected();
   try {
@@ -1349,11 +1547,12 @@ async function pollLive(jobId, run, ticker, status) {
 
 // --- Actions -----------------------------------------------------------------
 
-function downloadReceipt(ticker) {
+function downloadReceipt(ticker, moveStart = "") {
   const t = encodeURIComponent(ticker);
-  window.open(`/receipt/${t}?format=html`, "_blank", "noopener");
+  const move = moveStart ? `move_start_at=${encodeURIComponent(moveStart)}` : "";
+  window.open(`/receipt/${t}?format=html${move ? `&${move}` : ""}`, "_blank", "noopener");
   const a = document.createElement("a");
-  a.href = `/receipt/${t}`;
+  a.href = `/receipt/${t}${move ? `?${move}` : ""}`;
   a.download = `stocklens-receipt-${ticker}.json`;
   document.body.appendChild(a);
   a.click();
@@ -1395,6 +1594,8 @@ function showAuth(message = "") {
   state.trigger = null;
   state.live = null;
   state.saved = null;
+  state.selectedMove = null;
+  state.receiptMove = null;
   closeHistory();
   const picker = $("#picker");
   if (picker.open) picker.close();
@@ -1591,6 +1792,8 @@ function route() {
     state.card = null;
     state.trigger = null;
     state.live = null;
+    state.selectedMove = null;
+    state.receiptMove = null;
     document.title = "StockLens";
     markSelected();
     renderHome();
@@ -1634,10 +1837,12 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (action.dataset.action === "receipt") {
-    downloadReceipt(action.dataset.ticker);
+    downloadReceipt(action.dataset.ticker, action.dataset.moveStart || "");
     toast("Receipt downloaded. The printable version opened in a new tab.");
   } else if (action.dataset.action === "simulate") {
     simulate(state.ticker);
+  } else if (action.dataset.action === "investigate-move") {
+    if (state.ticker) investigateMove(state.ticker, action.dataset.moveStart);
   } else if (action.dataset.action === "live") {
     goLive();
   } else if (action.dataset.action === "retry") {

@@ -242,9 +242,10 @@ def test_startup_does_not_reset_an_existing_demo_watchlist():
 def test_catalog_lists_demo_coverage_first():
     stocks = client.get("/catalog").json()
     covered = [s["ticker"] for s in stocks if s["demo_coverage"]]
-    assert set(covered) == {"ACMEINFRA", "ZENITHPOLY", "ORIONPHARMA"}
-    assert [s["demo_coverage"] for s in stocks[:3]] == [True, True, True]
-    assert len(stocks) - 3 >= 20
+    # The three recorded cases plus LOTUSFOODS, the quiet ticker that has demo price history only.
+    assert set(covered) == {"ACMEINFRA", "ZENITHPOLY", "ORIONPHARMA", "LOTUSFOODS"}
+    assert [s["demo_coverage"] for s in stocks[:4]] == [True] * 4
+    assert len(stocks) - 4 >= 20
     for s in stocks:
         assert set(s) == {"ticker", "name", "sector", "demo_coverage", "fictional"}
         assert "price" not in s

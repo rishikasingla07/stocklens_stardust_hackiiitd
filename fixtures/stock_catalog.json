@@ -1,9 +1,10 @@
 {
-  "description": "Stocks a user can add to their watchlist. demo_coverage=true: a recorded demo case exists (fictional companies, for demos and tests only). demo_coverage=false: real NSE large-cap names listed for the picker only; StockLens has no prices or evidence for them in this demo.",
+  "description": "Stocks a user can add to their watchlist. demo_coverage=true: fictional demo companies with recorded demo data (a recorded investigation case, except LOTUSFOODS, which only has a quiet month of demo prices). demo_coverage=false: real NSE large-cap names listed for the picker only; StockLens has no prices or evidence for them in this demo.",
   "stocks": [
     {"ticker": "ACMEINFRA", "name": "ACME Infra", "sector": "Infrastructure", "demo_coverage": true, "fictional": true},
     {"ticker": "ZENITHPOLY", "name": "Zenith Polymers", "sector": "Chemicals", "demo_coverage": true, "fictional": true},
     {"ticker": "ORIONPHARMA", "name": "Orion Pharma", "sector": "Pharma", "demo_coverage": true, "fictional": true},
+    {"ticker": "LOTUSFOODS", "name": "Lotus Foods", "sector": "FMCG", "demo_coverage": true, "fictional": true},
 
     {"ticker": "RELIANCE", "name": "Reliance Industries", "sector": "Oil, Gas & Energy", "demo_coverage": false},
     {"ticker": "TCS", "name": "Tata Consultancy Services", "sector": "Information Technology", "demo_coverage": false},
