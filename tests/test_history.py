@@ -17,13 +17,34 @@ def offline(monkeypatch):
     monkeypatch.setattr(config, "LLM_API_KEY", "")
 
 
-def test_startup_creates_database_and_table(temp_db):
-    assert not temp_db.exists()
+def test_startup_creates_database_and_table(tmp_path, monkeypatch):
+    fresh = tmp_path / "fresh.db"  # the login fixture already created temp_db
+    monkeypatch.setattr(config, "DB_PATH", fresh)
+    monkeypatch.setattr(config, "MODE", "replay")
     with TestClient(app_module.app):  # runs the lifespan startup
         pass
-    with sqlite3.connect(temp_db) as conn:
+    with sqlite3.connect(fresh) as conn:
         columns = [row[1] for row in conn.execute("PRAGMA table_info(investigations)")]
-    assert columns == ["id", "ticker", "created_at", "source", "mode", "label", "score", "card_json"]
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert columns == ["id", "ticker", "created_at", "source", "mode", "label", "score", "card_json",
+                       "user_id"]
+    assert {"investigations", "users", "sessions", "watchlist"} <= tables
+
+
+def test_old_database_file_is_migrated(tmp_path, monkeypatch):
+    """A stocklens.db from before accounts gains user_id; its old rows belong to no one."""
+    old = tmp_path / "old.db"
+    with sqlite3.connect(old) as conn:
+        conn.execute("CREATE TABLE investigations (id INTEGER PRIMARY KEY, ticker TEXT NOT NULL, "
+                     "created_at TEXT NOT NULL, source TEXT NOT NULL, mode TEXT NOT NULL, "
+                     "label TEXT NOT NULL, score INTEGER NOT NULL, card_json TEXT NOT NULL)")
+        conn.execute("INSERT INTO investigations (ticker, created_at, source, mode, label, score, card_json) "
+                     "VALUES ('ACMEINFRA', '2026-10-24T10:00:00+05:30', 'investigate', 'replay', 'High', 100, '{}')")
+    monkeypatch.setattr(config, "DB_PATH", old)
+    history.init()
+    with sqlite3.connect(old) as conn:
+        assert "user_id" in [row[1] for row in conn.execute("PRAGMA table_info(investigations)")]
+        assert conn.execute("SELECT user_id FROM investigations").fetchone() == (None,)
 
 
 def test_investigate_saves_and_list_returns_it(monkeypatch):
@@ -62,10 +83,10 @@ def test_filter_by_ticker_and_limit(monkeypatch):
     assert len(client.get("/history", params={"limit": 1}).json()) == 1
 
 
-def test_list_is_capped_at_50(monkeypatch):
+def test_list_is_capped_at_50(monkeypatch, test_user):
     card = app_module.fixture_card("ACMEINFRA")
     for _ in range(55):
-        history.save(card, "investigate", "replay")
+        history.save(card, "investigate", "replay", user_id=test_user.id)
     assert len(client.get("/history", params={"limit": 500}).json()) == 50
 
 
@@ -89,12 +110,12 @@ def test_missing_id_is_404():
     assert "No saved investigation" in r.json()["detail"]
 
 
-def test_api_keys_are_never_stored(monkeypatch, temp_db):
+def test_api_keys_are_never_stored(monkeypatch, temp_db, test_user):
     monkeypatch.setattr(config, "TINYFISH_API_KEY", "tf-secret-key-123")
     monkeypatch.setattr(config, "LLM_API_KEY", "llm-secret-key-456")
     card = app_module.fixture_card("ACMEINFRA")
     leaky = card.model_copy(update={"limits": card.limits + ["error with tf-secret-key-123 and llm-secret-key-456"]})
-    history.save(leaky, "live", "live")
+    history.save(leaky, "live", "live", user_id=test_user.id)
     raw = temp_db.read_bytes()
     assert b"tf-secret-key-123" not in raw and b"llm-secret-key-456" not in raw
 

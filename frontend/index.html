@@ -8,8 +8,46 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="mode-plain">
+<body class="mode-plain is-anon is-booting">
   <a class="skip-link" href="#investigation">Skip to investigation</a>
+
+  <!-- Shown while logged out (body.is-anon). Demo-grade auth, not production security. -->
+  <section class="auth" id="auth" aria-labelledby="auth-title">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text">
+          <span class="brand-name">StockLens</span>
+          <span class="brand-tag">Why did this stock move? Evidence, not guesses.</span>
+        </span>
+      </div>
+      <div class="auth-tabs" role="tablist" aria-label="Log in or sign up">
+        <button type="button" role="tab" id="auth-tab-login" aria-selected="true" aria-controls="auth-form"
+          data-auth-mode="login">Log in</button>
+        <button type="button" role="tab" id="auth-tab-signup" aria-selected="false" aria-controls="auth-form"
+          data-auth-mode="signup">Sign up</button>
+      </div>
+      <h1 class="auth-title" id="auth-title">Log in to StockLens</h1>
+      <form class="auth-form" id="auth-form" novalidate data-mode="login">
+        <label class="lf-field" for="auth-account">
+          <span class="lf-label">Account ID</span>
+          <input id="auth-account" name="account_id" type="text" autocomplete="username" required
+            minlength="3" maxlength="32" spellcheck="false" autocapitalize="off">
+          <span class="lf-hint auth-signup-only">3–32 characters: letters, numbers, dot, dash or underscore.</span>
+        </label>
+        <label class="lf-field" for="auth-password">
+          <span class="lf-label">Password</span>
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" required
+            minlength="6" maxlength="128">
+          <span class="lf-hint auth-signup-only">At least 6 characters.</span>
+        </label>
+        <p class="lf-error" id="auth-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn-primary auth-submit" id="auth-submit">Log in</button>
+      </form>
+      <p class="auth-demo" id="auth-demo" hidden>Demo account: <strong>demo</strong> / <strong>demo123</strong></p>
+      <p class="auth-note">Demo-grade sign-in for a hackathon prototype, not production security.</p>
+    </div>
+  </section>
 
   <header class="site-header">
     <div class="header-top">
@@ -32,33 +70,26 @@
           <span class="status-dot" aria-hidden="true"></span>
           <span class="status-text">Checking server…</span>
         </span>
+        <span class="account" title="Logged in">
+          <span class="account-dot" aria-hidden="true"></span>
+          <span class="account-id" id="account-id"></span>
+        </span>
+        <button type="button" class="btn btn-secondary btn-small" data-action="logout">Log out</button>
       </div>
     </div>
 
     <section class="stocks" aria-labelledby="stocks-title">
       <div class="stocks-head">
         <h1 id="stocks-title">My Stocks</h1>
-        <p class="stocks-hint">Pick a stock with a flagged move to see why it moved.</p>
+        <p class="stocks-hint">Your watchlist. Pick a stock with a flagged move to see why it moved.</p>
+        <button type="button" class="btn btn-secondary btn-small stocks-edit" data-action="picker"
+          aria-haspopup="dialog" aria-controls="picker">Add stocks</button>
       </div>
-      <div class="stock-groups">
-        <div class="stock-group">
-          <h2 class="group-label" id="holdings-title">Holdings</h2>
-          <ul class="stock-row" id="holdings-list" aria-labelledby="holdings-title">
-            <li class="stock-card is-skeleton" aria-hidden="true"></li>
-            <li class="stock-card is-skeleton" aria-hidden="true"></li>
-            <li class="stock-card is-skeleton" aria-hidden="true"></li>
-            <li class="stock-card is-skeleton" aria-hidden="true"></li>
-          </ul>
-        </div>
-        <div class="stock-group">
-          <h2 class="group-label" id="watchlist-title">Watchlist</h2>
-          <ul class="stock-row" id="watchlist-list" aria-labelledby="watchlist-title">
-            <li class="stock-card is-skeleton" aria-hidden="true"></li>
-            <li class="stock-card is-skeleton" aria-hidden="true"></li>
-            <li class="stock-card is-skeleton" aria-hidden="true"></li>
-          </ul>
-        </div>
-      </div>
+      <ul class="stock-row" id="watchlist-list" aria-labelledby="stocks-title">
+        <li class="stock-card is-skeleton" aria-hidden="true"></li>
+        <li class="stock-card is-skeleton" aria-hidden="true"></li>
+        <li class="stock-card is-skeleton" aria-hidden="true"></li>
+      </ul>
     </section>
   </header>
 
@@ -110,6 +141,29 @@
     <p class="drawer-hint">Past investigations, newest first. Opening one shows the saved result; nothing is re-run.</p>
     <ul class="history-list" id="history-list" aria-live="polite"></ul>
   </aside>
+
+  <dialog class="picker" id="picker" aria-labelledby="picker-title">
+    <form class="picker-form" id="picker-form" method="dialog">
+      <div class="picker-head">
+        <h2 class="picker-title" id="picker-title">Choose your stocks</h2>
+        <p class="picker-hint">Stocks tagged <span class="tag tag-demo">Demo case</span> have a recorded
+          investigation. The others are real NSE names listed so you can build a watchlist; this demo has no
+          prices or evidence for them.</p>
+        <label class="picker-search" for="picker-search">
+          <span class="visually-hidden">Search stocks</span>
+          <input id="picker-search" type="search" placeholder="Search by ticker, name or sector"
+            autocomplete="off" spellcheck="false">
+        </label>
+      </div>
+      <ul class="picker-list" id="picker-list" aria-label="Stocks"></ul>
+      <p class="lf-error" id="picker-error" role="alert" hidden></p>
+      <div class="picker-foot">
+        <span class="picker-count" id="picker-count" aria-live="polite"></span>
+        <button type="button" class="btn btn-secondary" data-action="picker-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="picker-save">Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

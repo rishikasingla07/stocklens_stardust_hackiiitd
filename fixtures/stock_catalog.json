@@ -1,0 +1,30 @@
+{
+  "description": "Stocks a user can add to their watchlist. demo_coverage=true: a recorded demo case exists (fictional companies, for demos and tests only). demo_coverage=false: real NSE large-cap names listed for the picker only; StockLens has no prices or evidence for them in this demo.",
+  "stocks": [
+    {"ticker": "ACMEINFRA", "name": "ACME Infra", "sector": "Infrastructure", "demo_coverage": true, "fictional": true},
+    {"ticker": "ZENITHPOLY", "name": "Zenith Polymers", "sector": "Chemicals", "demo_coverage": true, "fictional": true},
+    {"ticker": "ORIONPHARMA", "name": "Orion Pharma", "sector": "Pharma", "demo_coverage": true, "fictional": true},
+
+    {"ticker": "RELIANCE", "name": "Reliance Industries", "sector": "Oil, Gas & Energy", "demo_coverage": false},
+    {"ticker": "TCS", "name": "Tata Consultancy Services", "sector": "Information Technology", "demo_coverage": false},
+    {"ticker": "HDFCBANK", "name": "HDFC Bank", "sector": "Banking", "demo_coverage": false},
+    {"ticker": "ICICIBANK", "name": "ICICI Bank", "sector": "Banking", "demo_coverage": false},
+    {"ticker": "INFY", "name": "Infosys", "sector": "Information Technology", "demo_coverage": false},
+    {"ticker": "BHARTIARTL", "name": "Bharti Airtel", "sector": "Telecom", "demo_coverage": false},
+    {"ticker": "SBIN", "name": "State Bank of India", "sector": "Banking", "demo_coverage": false},
+    {"ticker": "ITC", "name": "ITC", "sector": "FMCG", "demo_coverage": false},
+    {"ticker": "LT", "name": "Larsen & Toubro", "sector": "Construction & Engineering", "demo_coverage": false},
+    {"ticker": "HINDUNILVR", "name": "Hindustan Unilever", "sector": "FMCG", "demo_coverage": false},
+    {"ticker": "KOTAKBANK", "name": "Kotak Mahindra Bank", "sector": "Banking", "demo_coverage": false},
+    {"ticker": "AXISBANK", "name": "Axis Bank", "sector": "Banking", "demo_coverage": false},
+    {"ticker": "BAJFINANCE", "name": "Bajaj Finance", "sector": "Financial Services", "demo_coverage": false},
+    {"ticker": "MARUTI", "name": "Maruti Suzuki India", "sector": "Automobiles", "demo_coverage": false},
+    {"ticker": "SUNPHARMA", "name": "Sun Pharmaceutical Industries", "sector": "Pharma", "demo_coverage": false},
+    {"ticker": "HCLTECH", "name": "HCL Technologies", "sector": "Information Technology", "demo_coverage": false},
+    {"ticker": "WIPRO", "name": "Wipro", "sector": "Information Technology", "demo_coverage": false},
+    {"ticker": "ASIANPAINT", "name": "Asian Paints", "sector": "Consumer Goods", "demo_coverage": false},
+    {"ticker": "TITAN", "name": "Titan Company", "sector": "Consumer Durables", "demo_coverage": false},
+    {"ticker": "ULTRACEMCO", "name": "UltraTech Cement", "sector": "Cement", "demo_coverage": false},
+    {"ticker": "NTPC", "name": "NTPC", "sector": "Power", "demo_coverage": false}
+  ]
+}

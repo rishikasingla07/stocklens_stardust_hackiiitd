@@ -217,3 +217,34 @@ LIVE_JOBS_KEPT = 20
 
 # How often the frontend polls GET /live/{job_id}, in seconds.
 LIVE_POLL_SECONDS = 2
+
+# --- Accounts, sessions and watchlists (backend/db/users.py, /auth routes) ---
+# Demo-grade auth for the hackathon, not production security.
+
+# Password hashing: hashlib.pbkdf2_hmac with SHA-256 and a random salt per user.
+# The iteration count is stored with each hash, so it can be raised later.
+AUTH_PBKDF2_ITERATIONS = 200_000
+AUTH_SALT_BYTES = 16
+
+# Account ID and password rules.
+AUTH_ACCOUNT_ID_MIN = 3
+AUTH_ACCOUNT_ID_MAX = 32
+AUTH_ACCOUNT_ID_PATTERN = r"^[A-Za-z0-9_.-]+$"
+AUTH_PASSWORD_MIN = 6
+AUTH_PASSWORD_MAX = 128
+
+# Sessions: a random token in an HttpOnly cookie; only its SHA-256 hash is stored.
+AUTH_SESSION_HOURS = 12
+AUTH_COOKIE_NAME = "stocklens_session"
+# Set True when served over HTTPS (the cookie is then never sent over plain HTTP).
+AUTH_COOKIE_SECURE = os.getenv("STOCKLENS_COOKIE_SECURE", "").lower() in ("1", "true", "yes")
+
+# Seeded at startup in replay mode only, with this starting watchlist. It cannot
+# log in when STOCKLENS_MODE is live (it has a published password).
+DEMO_ACCOUNT_ID = "demo"
+DEMO_ACCOUNT_PASSWORD = "demo123"
+DEMO_WATCHLIST = ("ACMEINFRA", "ZENITHPOLY", "ORIONPHARMA", "RELIANCE", "TCS", "INFY")
+
+# Stock picker: the stocks a user can add (fixtures/stock_catalog.json).
+CATALOG_FILE = FIXTURES_DIR / "stock_catalog.json"
+WATCHLIST_MAX = 50

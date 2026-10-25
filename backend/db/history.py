@@ -1,39 +1,30 @@
 """Investigation history in SQLite (stdlib sqlite3): every Card produced is saved and can be reopened.
 
-One short-lived connection per call, so the API worker threads and the live-job
-thread can all use it safely. The database file is config.DB_PATH (git-ignored).
+History is per user: each row belongs to the user who produced it, and only
+that user can list or reopen it. Connections come from backend/db/connection.py.
 API keys are never stored: any key text is masked before a row is written.
 """
 
 import json
-import sqlite3
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
 from backend import config
+from backend.db.connection import connect
 from backend.models import IST, Card
 
-SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
 SOURCES = ("investigate", "simulate", "live")
 MODES = ("replay", "live")
 MAX_LIMIT = 50
 LIST_COLUMNS = "id, ticker, created_at, source, mode, label, score"
 
-
-def _connect(path: Path | None = None) -> sqlite3.Connection:
-    """Open the database (config.DB_PATH unless given), creating the file and table if missing."""
-    path = Path(path or config.DB_PATH)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
-    return conn
+_connect = connect  # kept for callers of the old private name
 
 
 def init() -> None:
-    """Create the database and table if missing (called on app startup)."""
-    with closing(_connect()):
+    """Create the database and tables if missing (called on app startup)."""
+    with closing(connect()):
         pass
 
 
@@ -44,39 +35,40 @@ def _mask_keys(text: str) -> str:
     return text
 
 
-def save(card: Card, source: str, mode: str, path: Path | None = None) -> int:
-    """Store one Card; returns its id. `path` pins the database (e.g. for a background job)."""
+def save(card: Card, source: str, mode: str, path: Path | None = None, *, user_id: int) -> int:
+    """Store one Card for a user; returns its id. `path` pins the database (e.g. for a background job)."""
     if source not in SOURCES:
         raise ValueError(f"source must be one of {SOURCES}, got {source!r}")
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
     card_json = _mask_keys(card.model_dump_json())
-    with closing(_connect(path)) as conn, conn:
+    with closing(connect(path)) as conn, conn:
         cursor = conn.execute(
-            "INSERT INTO investigations (ticker, created_at, source, mode, label, score, card_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO investigations (ticker, created_at, source, mode, label, score, card_json, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (card.ticker.upper(), datetime.now(IST).isoformat(timespec="seconds"), source, mode,
-             card.confidence_label, card.confidence_score, card_json))
+             card.confidence_label, card.confidence_score, card_json, user_id))
         return cursor.lastrowid
 
 
-def list_history(ticker: str | None = None, limit: int = MAX_LIMIT) -> list[dict]:
-    """Newest first, without card_json. Optionally only one ticker."""
+def list_history(user_id: int, ticker: str | None = None, limit: int = MAX_LIMIT) -> list[dict]:
+    """One user's history, newest first, without card_json. Optionally only one ticker."""
     limit = max(1, min(int(limit), MAX_LIMIT))
-    with closing(_connect()) as conn:
+    with closing(connect()) as conn:
         if ticker:
             rows = conn.execute(
-                f"SELECT {LIST_COLUMNS} FROM investigations WHERE ticker = ? ORDER BY id DESC LIMIT ?",
-                (ticker.upper(), limit)).fetchall()
+                f"SELECT {LIST_COLUMNS} FROM investigations WHERE user_id = ? AND ticker = ? "
+                "ORDER BY id DESC LIMIT ?", (user_id, ticker.upper(), limit)).fetchall()
         else:
             rows = conn.execute(
-                f"SELECT {LIST_COLUMNS} FROM investigations ORDER BY id DESC LIMIT ?",
-                (limit,)).fetchall()
+                f"SELECT {LIST_COLUMNS} FROM investigations WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+                (user_id, limit)).fetchall()
     return [dict(row) for row in rows]
 
 
-def get_card(entry_id: int) -> Card | None:
-    """The stored Card for one history entry, or None if there is no such id."""
-    with closing(_connect()) as conn:
-        row = conn.execute("SELECT card_json FROM investigations WHERE id = ?", (entry_id,)).fetchone()
+def get_card(entry_id: int, user_id: int) -> Card | None:
+    """The stored Card for one of this user's history entries, or None (missing or someone else's)."""
+    with closing(connect()) as conn:
+        row = conn.execute("SELECT card_json FROM investigations WHERE id = ? AND user_id = ?",
+                           (entry_id, user_id)).fetchone()
     return Card.model_validate(json.loads(row["card_json"])) if row else None

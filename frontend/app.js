@@ -33,7 +33,9 @@ const TRIGGER_PAUSE_MS = 1200;
 
 const state = {
   mode: loadMode(),
-  stocks: null, // {holdings, watchlist}
+  user: null, // {account_id} once logged in
+  stocks: null, // GET /watchlist body: {tickers, stocks: [rows]}
+  catalog: null, // GET /catalog rows (loaded when the picker first opens)
   health: null, // {mode} or null if the server could not be reached
   ticker: null,
   card: null,
@@ -166,6 +168,8 @@ async function api(method, path, json) {
   if (!res.ok) {
     const err = new Error(errorDetail(body) || `Request failed (${res.status})`);
     err.status = res.status;
+    // A 401 outside /auth means the session ended (logged out elsewhere or expired).
+    if (res.status === 401 && !path.startsWith("/auth/") && path !== "/me") sessionLost();
     throw err;
   }
   return body;
@@ -188,6 +192,7 @@ const healthReady = (async () => {
     const body = await api("GET", "/health");
     state.health = { mode: body && body.mode === "live" ? "live" : "replay" };
     el.dataset.mode = state.health.mode;
+    $("#auth-demo").hidden = state.health.mode !== "replay"; // the demo account exists in replay mode only
     $(".status-text", el).textContent = state.health.mode === "live" ? "Live mode" : "Replay mode: recorded evidence";
   } catch {
     state.health = null;
@@ -219,15 +224,21 @@ function applyMode() {
 
 // --- My Stocks ---------------------------------------------------------------
 
+const NO_DEMO_COVERAGE = "No investigation available in this demo";
+
+/** One watchlist card. Only demo-coverage stocks have a (recorded) price; the rest show their sector. */
 function stockCard(stock) {
-  const cls = signClass(stock.change);
+  const priced = stock.price !== null && stock.price !== undefined;
+  const quote = priced
+    ? `<span class="sc-quote">
+        <span class="sc-price">${esc(fmtPrice(stock.price))}</span>
+        <span class="sc-change ${signClass(stock.change)}">${esc(fmtSigned(stock.change_pct))}</span>
+      </span>`
+    : `<span class="sc-sector">${esc(stock.sector || "")}</span>`;
   const body = `
     <span class="sc-ticker">${esc(stock.ticker)}</span>
     <span class="sc-name">${esc(stock.name)}</span>
-    <span class="sc-quote">
-      <span class="sc-price">${esc(fmtPrice(stock.price))}</span>
-      <span class="sc-change ${cls}">${esc(fmtSigned(stock.change_pct))}</span>
-    </span>`;
+    ${quote}`;
   if (stock.alert) {
     return `<li><button type="button" class="stock-card is-flagged" data-ticker="${esc(stock.ticker)}"
         aria-label="Investigate ${esc(stock.ticker)}, ${esc(stock.name)}, ${esc(fmtSigned(stock.change_pct))} today, move flagged">
@@ -236,11 +247,13 @@ function stockCard(stock) {
       ${latestSlot(stock.ticker)}
     </button></li>`;
   }
-  return `<li><div class="stock-card is-quiet" aria-label="${esc(stock.ticker)}, ${esc(stock.name)}, no investigation available">
+  const note = stock.demo_coverage ? "No flagged move" : NO_DEMO_COVERAGE;
+  return `<li><button type="button" class="stock-card is-quiet" data-ticker="${esc(stock.ticker)}"
+      aria-label="${esc(stock.ticker)}, ${esc(stock.name)}: ${esc(note)}">
       ${body}
-      <span class="sc-foot"><span class="sc-none">No investigation available</span></span>
+      <span class="sc-foot"><span class="sc-none">${esc(note)}</span></span>
       ${latestSlot(stock.ticker)}
-    </div></li>`;
+    </button></li>`;
 }
 
 // --- Compare cases (labels from the real results) ------------------------------
@@ -406,29 +419,31 @@ async function openSaved(id) {
   renderResult(card, { animate: false, saved: row });
 }
 
-function renderStockList(el, stocks) {
-  el.innerHTML = stocks.length ? stocks.map(stockCard).join("") : `<li class="sc-empty">No stocks.</li>`;
+function renderWatchlist() {
+  const stocks = (state.stocks && state.stocks.stocks) || [];
+  $("#watchlist-list").innerHTML = stocks.length
+    ? stocks.map(stockCard).join("")
+    : `<li class="sc-empty">Your watchlist is empty. Add the stocks you hold or follow.
+        <button type="button" class="btn btn-primary btn-small" data-action="picker">Add stocks</button></li>`;
+  $(".stocks-edit").textContent = stocks.length ? "Edit list" : "Add stocks";
+  renderLatestChips();
+  markSelected();
 }
 
 async function loadStocks() {
   try {
-    state.stocks = await api("GET", "/stocks");
-    renderStockList($("#holdings-list"), state.stocks.holdings || []);
-    renderStockList($("#watchlist-list"), state.stocks.watchlist || []);
-    renderLatestChips();
-    markSelected();
+    state.stocks = await api("GET", "/watchlist");
+    renderWatchlist();
   } catch (err) {
-    const msg = `<li class="sc-error">Could not load your stocks: ${esc(err.message)}
+    if (err.status === 401) return; // back on the login screen
+    $("#watchlist-list").innerHTML = `<li class="sc-error">Could not load your stocks: ${esc(err.message)}
       <button type="button" class="btn btn-small" data-action="reload-stocks">Try again</button></li>`;
-    $("#holdings-list").innerHTML = msg;
-    $("#watchlist-list").innerHTML = "";
   }
 }
 
 function findStock(ticker) {
   if (!state.stocks) return null;
-  const all = [...(state.stocks.holdings || []), ...(state.stocks.watchlist || [])];
-  return all.find((s) => s.ticker === ticker) || null;
+  return (state.stocks.stocks || []).find((s) => s.ticker === ticker) || null;
 }
 
 function stockName(ticker) {
@@ -450,10 +465,13 @@ function updateSimulateButton() {
   const btn = $("#simulate-btn");
   if (!btn) return;
   const busy = state.simulating !== null && state.simulating === state.run;
-  btn.disabled = !state.ticker || busy;
+  const uncovered = findStock(state.ticker)?.demo_coverage === false;
+  btn.disabled = !state.ticker || busy || uncovered;
   btn.classList.toggle("is-busy", busy);
   btn.textContent = busy ? "Simulating…" : "Simulate move";
-  btn.title = state.ticker ? `Run the trigger engine on ${state.ticker}'s recorded prices` : "Select a stock first";
+  btn.title = !state.ticker ? "Select a stock first"
+    : uncovered ? `${NO_DEMO_COVERAGE} for ${state.ticker}`
+      : `Run the trigger engine on ${state.ticker}'s recorded prices`;
 }
 
 // --- Evidence model ------------------------------------------------------------
@@ -1003,8 +1021,18 @@ function renderMessage(title, body, { retry = false, tone = "neutral" } = {}) {
   </section>`;
 }
 
+function renderNoCoverage(ticker) {
+  const name = stockName(ticker);
+  renderMessage(NO_DEMO_COVERAGE,
+    `${ticker}${name ? ` (${name})` : ""} is a real NSE stock in your watchlist, but this demo has no recorded ` +
+    "evidence or prices for it, so StockLens cannot investigate it here. Try ACMEINFRA, ZENITHPOLY or ORIONPHARMA.");
+}
+
 function renderFailure(ticker, err) {
-  if (err.status === 404) {
+  if (err.status === 401) return; // the login screen is already showing
+  if (err.status === 404 && String(err.message || "").startsWith(NO_DEMO_COVERAGE)) {
+    renderNoCoverage(ticker);
+  } else if (err.status === 404) {
     renderMessage("No investigation available",
       `${ticker} has no flagged move on record, so there is nothing to investigate.`);
   } else if (err.status === 0) {
@@ -1025,6 +1053,10 @@ async function investigate(ticker) {
   markSelected();
   await stocksReady;
   if (run !== state.run) return;
+  if (findStock(ticker)?.demo_coverage === false) {
+    renderNoCoverage(ticker);
+    return;
+  }
   if (findStock(ticker)?.alert === false) {
     // Known stock without a flagged move: say so without asking the server.
     renderFailure(ticker, { status: 404 });
@@ -1320,6 +1352,197 @@ function downloadReceipt(ticker) {
   a.remove();
 }
 
+// --- Accounts (login, sign-up, logout) -------------------------------------------
+// Demo-grade auth. The session is an HttpOnly cookie, so this script never sees the token.
+
+const ACCOUNT_ID_RE = /^[A-Za-z0-9_.-]{3,32}$/;
+let appStarted = false;
+
+function setAuthMode(mode) {
+  const form = $("#auth-form");
+  form.dataset.mode = mode;
+  const signup = mode === "signup";
+  $("#auth-tab-login").setAttribute("aria-selected", String(!signup));
+  $("#auth-tab-signup").setAttribute("aria-selected", String(signup));
+  $("#auth-title").textContent = signup ? "Create a StockLens account" : "Log in to StockLens";
+  $("#auth-submit").textContent = signup ? "Sign up" : "Log in";
+  $("#auth-password").autocomplete = signup ? "new-password" : "current-password";
+  showAuthError("");
+}
+
+function showAuthError(message) {
+  const el = $("#auth-error");
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+/** Show the login screen (optionally with a message) and stop whatever was running. */
+function showAuth(message = "") {
+  state.run++;
+  state.user = null;
+  state.stocks = null;
+  state.history = [];
+  state.ticker = null;
+  state.card = null;
+  state.trigger = null;
+  state.live = null;
+  state.saved = null;
+  closeHistory();
+  const picker = $("#picker");
+  if (picker.open) picker.close();
+  document.body.classList.add("is-anon");
+  document.body.classList.remove("is-booting");
+  document.title = "Log in · StockLens";
+  // Start the next login at home, so it never re-runs the previous user's page.
+  if (location.hash && location.hash !== "#/") window.history.replaceState(null, "", "#/");
+  $("#auth-password").value = "";
+  showAuthError(message);
+  $("#auth-account").focus();
+}
+
+function sessionLost() {
+  if (state.user) showAuth("Your session has ended. Please log in again.");
+}
+
+/** Logged in: fill the header and load everything that needs a user. */
+function enterApp(user) {
+  state.user = user;
+  $("#account-id").textContent = user.account_id;
+  document.body.classList.remove("is-anon", "is-booting");
+  stocksReady = loadStocks();
+  loadHistory();
+  loadCases();
+  if (!appStarted) {
+    appStarted = true;
+    setInterval(() => {
+      if (!state.user) return;
+      renderLatestChips();
+      if (!$("#history-drawer").hidden) renderHistoryList();
+    }, 60000); // keep "N min ago" current
+  }
+  route();
+}
+
+async function submitAuth(form) {
+  const mode = form.dataset.mode;
+  const accountId = form.elements.account_id.value.trim();
+  const password = form.elements.password.value;
+  if (!accountId || !password) { showAuthError("Enter your account ID and password."); return; }
+  if (mode === "signup") {
+    if (!ACCOUNT_ID_RE.test(accountId)) {
+      showAuthError("Account ID: 3–32 characters, using letters, numbers, dot, dash or underscore.");
+      return;
+    }
+    if (password.length < 6) { showAuthError("Password: at least 6 characters."); return; }
+  }
+  const button = $("#auth-submit");
+  button.disabled = true;
+  showAuthError("");
+  try {
+    const user = await api("POST", mode === "signup" ? "/auth/signup" : "/auth/login",
+      { account_id: accountId, password });
+    form.elements.password.value = "";
+    enterApp(user);
+  } catch (err) {
+    showAuthError(err.status === 0 ? "The StockLens server could not be reached." : err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function logout() {
+  try { await api("POST", "/auth/logout"); } catch { /* the cookie is cleared either way */ }
+  showAuth("");
+  toast("Logged out.");
+}
+
+// --- Stock picker ------------------------------------------------------------------
+
+function pickerItemHtml(s, checked, group) {
+  return `<li data-group="${esc(group)}" data-search="${esc(`${s.ticker} ${s.name} ${s.sector}`.toLowerCase())}">
+    <label class="picker-item">
+      <input type="checkbox" name="ticker" value="${esc(s.ticker)}" ${checked ? "checked" : ""}>
+      <span class="pi-text">
+        <span class="pi-ticker">${esc(s.ticker)}</span>
+        <span class="pi-name">${esc(s.name)}</span>
+        <span class="pi-sector">${esc(s.sector)}</span>
+      </span>
+      ${s.demo_coverage ? `<span class="tag tag-demo" title="${s.fictional ? "Fictional company with a recorded demo case" : "Recorded demo case"}">Demo case</span>` : ""}
+    </label>
+  </li>`;
+}
+
+function updatePickerCount() {
+  const n = $$("#picker-list input:checked").length;
+  $("#picker-count").textContent = `${plural(n, "stock")} selected`;
+}
+
+function filterPicker(query) {
+  const q = query.trim().toLowerCase();
+  let shown = 0;
+  $$("#picker-list li[data-search]").forEach((li) => {
+    const match = !q || li.dataset.search.includes(q);
+    li.hidden = !match;
+    if (match) shown += 1;
+  });
+  $$("#picker-list .picker-group").forEach((g) => {
+    const items = $$(`li[data-group="${g.dataset.groupId}"]`);
+    g.hidden = items.length > 0 && items.every((li) => li.hidden);
+  });
+  $("#picker-empty").hidden = shown > 0;
+}
+
+async function openPicker() {
+  const dialog = $("#picker");
+  const list = $("#picker-list");
+  $("#picker-error").hidden = true;
+  $("#picker-search").value = "";
+  list.innerHTML = `<li class="picker-empty">Loading stocks…</li>`;
+  dialog.showModal();
+  if (!state.catalog) {
+    try {
+      state.catalog = await api("GET", "/catalog");
+    } catch (err) {
+      list.innerHTML = `<li class="picker-empty">Could not load the stock list: ${esc(err.message)}</li>`;
+      return;
+    }
+  }
+  const chosen = new Set((state.stocks && state.stocks.tickers) || []);
+  const covered = state.catalog.filter((s) => s.demo_coverage);
+  const others = state.catalog.filter((s) => !s.demo_coverage);
+  const group = (id, title, items) => items.length
+    ? `<li class="picker-group" data-group-id="${id}">${esc(title)}</li>` +
+      items.map((s) => pickerItemHtml(s, chosen.has(s.ticker), id)).join("")
+    : "";
+  list.innerHTML = group("demo", "With a demo investigation", covered) +
+    group("nse", "NSE large caps (no demo data)", others) +
+    `<li class="picker-empty" id="picker-empty" hidden>No stocks match your search.</li>`;
+  updatePickerCount();
+  $("#picker-search").focus();
+}
+
+async function savePicker() {
+  const selected = new Set($$("#picker-list input:checked").map((el) => el.value));
+  // Keep the current order for stocks already listed; add new ones in catalog order.
+  const current = ((state.stocks && state.stocks.tickers) || []).filter((t) => selected.has(t));
+  const added = (state.catalog || []).map((s) => s.ticker).filter((t) => selected.has(t) && !current.includes(t));
+  const button = $("#picker-save");
+  button.disabled = true;
+  try {
+    state.stocks = await api("PUT", "/watchlist", { tickers: [...current, ...added] });
+    $("#picker").close();
+    renderWatchlist();
+    toast(`Watchlist saved: ${plural(state.stocks.tickers.length, "stock")}.`);
+  } catch (err) {
+    if (err.status === 401) return;
+    const el = $("#picker-error");
+    el.textContent = `Could not save: ${err.message}`;
+    el.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // --- Routing -----------------------------------------------------------------
 
 function go(ticker) {
@@ -1334,6 +1557,7 @@ function goLive() {
 }
 
 function route() {
+  if (!state.user) return; // logged out: the login screen is showing; route after login
   const match = location.hash.match(/^#\/stock\/([^/]+)$/);
   const savedMatch = location.hash.match(/^#\/history\/(\d+)$/);
   if (savedMatch) {
@@ -1366,6 +1590,12 @@ function route() {
 }
 
 document.addEventListener("click", (event) => {
+  const authTab = event.target.closest("[data-auth-mode]");
+  if (authTab) {
+    setAuthMode(authTab.dataset.authMode);
+    $("#auth-account").focus();
+    return;
+  }
   const modeBtn = event.target.closest(".mode-toggle button");
   if (modeBtn) {
     state.mode = modeBtn.dataset.mode;
@@ -1406,6 +1636,12 @@ document.addEventListener("click", (event) => {
     route();
   } else if (action.dataset.action === "reload-stocks") {
     stocksReady = loadStocks();
+  } else if (action.dataset.action === "logout") {
+    logout();
+  } else if (action.dataset.action === "picker") {
+    openPicker();
+  } else if (action.dataset.action === "picker-cancel") {
+    $("#picker").close();
   }
 });
 
@@ -1413,10 +1649,25 @@ document.addEventListener("submit", (event) => {
   if (event.target.id === "live-form") {
     event.preventDefault();
     submitLive(event.target);
+  } else if (event.target.id === "auth-form") {
+    event.preventDefault();
+    submitAuth(event.target);
+  } else if (event.target.id === "picker-form") {
+    event.preventDefault();
+    savePicker();
   }
 });
 
+document.addEventListener("change", (event) => {
+  if (event.target.closest && event.target.closest("#picker-list")) updatePickerCount();
+});
+
+document.addEventListener("input", (event) => {
+  if (event.target.id === "picker-search") filterPicker(event.target.value);
+});
+
 document.addEventListener("keydown", (event) => {
+  if (!state.user || $("#picker").open) return; // no app shortcuts on the login screen or in the picker
   const drawer = $("#history-drawer");
   if (drawer && !drawer.hidden) {
     if (event.key === "Escape") {
@@ -1449,11 +1700,15 @@ window.addEventListener("resize", () => {
 
 window.addEventListener("hashchange", route);
 applyMode();
-let stocksReady = loadStocks();
-loadHistory();
-loadCases();
-setInterval(() => {
-  renderLatestChips();
-  if (!$("#history-drawer").hidden) renderHistoryList();
-}, 60000); // keep "N min ago" current
-route();
+let stocksReady = Promise.resolve();
+
+// Boot: logged in already (session cookie)? Otherwise show the login screen.
+(async () => {
+  try {
+    const session = await api("GET", "/auth/session");
+    if (session && session.account_id) enterApp(session);
+    else showAuth("");
+  } catch (err) {
+    showAuth(err.status === 0 ? "The StockLens server could not be reached." : err.message);
+  }
+})();

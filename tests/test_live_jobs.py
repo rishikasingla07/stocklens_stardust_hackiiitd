@@ -227,3 +227,15 @@ def test_finished_live_job_is_saved_to_history(monkeypatch, tmp_path):
     stored = client.get(f"/history/{row['id']}").json()
     assert stored == body["card"]
     assert SECRET not in client.get(f"/history/{row['id']}").text
+
+
+def test_live_job_belongs_to_the_user_who_started_it(monkeypatch, tmp_path):
+    use_fake(monkeypatch, tmp_path)
+    job_id = start().json()["job_id"]
+    other = TestClient(app_module.app)
+    assert other.post("/auth/signup", json={"account_id": "someone-else", "password": "pw-123456"}).status_code == 201
+    assert other.get(f"/live/{job_id}").status_code == 404  # cannot watch another user's job
+    assert other.get("/live/status").json()["active_job_id"] in (None,)  # never sees its id
+    assert wait_for(job_id)["status"] == "done"
+    assert other.get("/history").json() == []  # the finished Card went to the starter's history
+    assert [r["source"] for r in client.get("/history").json()] == ["live"]
