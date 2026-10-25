@@ -95,7 +95,7 @@ def test_simulate_flags_acmeinfra_and_matches_investigate():
     card = body["card"]
     investigated = client.post("/investigate/ACMEINFRA").json()
     assert (card["confidence_score"], card["confidence_label"]) == (
-        investigated["confidence_score"], investigated["confidence_label"]) == (90, "High")
+        investigated["confidence_score"], investigated["confidence_label"]) == (100, "High")
     assert card["explanation_text"] == investigated["explanation_text"]
     assert card["explanation_text"].strip()
 
@@ -113,9 +113,9 @@ def test_simulate_uses_the_move_the_trigger_produced(monkeypatch):
     seen = []
     real = app_module.pipeline.card_for_move
 
-    def spy(move, include_skeptic=False, client=None):
+    def spy(move, client=None):
         seen.append(move)
-        return real(move, include_skeptic, client)
+        return real(move, client)
 
     monkeypatch.setattr(app_module.pipeline, "card_for_move", spy)
     client.post("/simulate/ORIONPHARMA")

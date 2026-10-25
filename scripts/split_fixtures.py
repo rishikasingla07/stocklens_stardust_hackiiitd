@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from backend import config  # noqa: E402
 
-INVESTIGATORS = ("atlas", "sherlock", "echo", "skeptic")
+INVESTIGATORS = ("atlas", "sherlock", "echo")
 
 
 def split_case(case_dir: Path) -> dict[str, int]:

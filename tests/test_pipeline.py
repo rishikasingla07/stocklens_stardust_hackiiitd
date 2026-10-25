@@ -12,23 +12,10 @@ def replay_mode(monkeypatch):
     monkeypatch.setattr(config, "MODE", "replay")
 
 
-def test_high_case_with_challenge_is_high_90():
-    # The fixture's expected 90 includes the Skeptic's earlier hint (-10).
-    card = pipeline.live_card("ACMEINFRA", include_skeptic=True)
-    assert (card.confidence_label, card.confidence_score) == ("High", 90)
-    assert card.leading_explanation.startswith("ACME Infra revises FY27")
-
-
-def test_high_case_default_run_includes_earlier_hint():
-    # DEFAULT_INCLUDE_EARLIER_HINTS: the default run keeps the -10 earlier hint.
-    card = pipeline.live_card("ACMEINFRA")
-    assert (card.confidence_label, card.confidence_score) == ("High", 90)
-
-
-def test_high_case_without_earlier_hints_has_no_hint_penalty(monkeypatch):
-    monkeypatch.setattr(config, "DEFAULT_INCLUDE_EARLIER_HINTS", False)
+def test_high_case_is_high_100():
     card = pipeline.live_card("ACMEINFRA")
     assert (card.confidence_label, card.confidence_score) == ("High", 100)
+    assert card.leading_explanation.startswith("ACME Infra revises FY27")
 
 
 def test_unknown_case_is_unknown():
@@ -49,25 +36,40 @@ def test_unknown_ticker_returns_none():
 
 def test_echo_in_cards_is_tier3_unverified():
     for ticker in ("ACMEINFRA", "ZENITHPOLY", "ORIONPHARMA"):
-        card = pipeline.live_card(ticker, include_skeptic=True)
+        card = pipeline.live_card(ticker)
         echo = [e for e in card.accepted_evidence + [r.evidence for r in card.rejected_evidence]
                 if e.investigator == "echo"]
         assert echo and all(e.source_tier == 3 and not e.verified for e in echo)
 
 
-def test_full_skeptic_only_runs_when_requested(monkeypatch):
+def test_pipeline_runs_atlas_sherlock_echo_only():
     move = replay.find_case("ACMEINFRA")[1]
-    default = pipeline.run_investigators(move)
-    assert [r.investigator for r in default] == ["atlas", "sherlock", "echo", "skeptic"]
-    assert "earlier-hint lookup only" in default[-1].notes
-    monkeypatch.setattr(config, "DEFAULT_INCLUDE_EARLIER_HINTS", False)
     assert [r.investigator for r in pipeline.run_investigators(move)] == ["atlas", "sherlock", "echo"]
-    challenged = pipeline.run_investigators(move, include_skeptic=True)
-    assert [r.investigator for r in challenged] == ["atlas", "sherlock", "echo", "skeptic"]
 
 
 def test_replay_spends_no_tinyfish_calls():
     client = TinyFishClient(api_key="", budget=CallBudget(limit=0))
     move = replay.find_case("ACMEINFRA")[1]
-    reports = pipeline.run_investigators(move, include_skeptic=True, client=client)
-    assert len(reports) == 4 and client.budget.used == 0
+    reports = pipeline.run_investigators(move, client=client)
+    assert len(reports) == 3 and client.budget.used == 0
+
+
+def test_live_mode_still_uses_recorded_evidence_for_demo_cases(monkeypatch):
+    # Regression: with STOCKLENS_MODE=live, Sherlock used to search live inside the
+    # Investigate pipeline, lost the recorded filing and turned ACMEINFRA Unknown.
+    import httpx
+
+    def no_network(request):
+        raise AssertionError(f"the recorded pipeline must not call TinyFish: {request.url}")
+    monkeypatch.setattr(config, "MODE", "live")
+    monkeypatch.setattr(config, "TINYFISH_API_KEY", "")  # if it went live anyway: no network, just empty
+    client = TinyFishClient(api_key="fake", budget=CallBudget(limit=10),
+                            transport=httpx.MockTransport(no_network))
+    move = replay.find_case("ACMEINFRA")[1]
+    reports = pipeline.run_investigators(move, client=client)
+    assert [len(r.evidence) for r in reports] == [0, 2, 1]  # atlas, sherlock (recorded), echo
+    assert client.budget.used == 0
+    expected = {"ACMEINFRA": ("High", 100), "ZENITHPOLY": ("Unknown", 15), "ORIONPHARMA": ("Medium", 50)}
+    for ticker, result in expected.items():
+        card = pipeline.live_card(ticker)
+        assert (card.confidence_label, card.confidence_score) == result

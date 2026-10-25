@@ -10,7 +10,6 @@ from backend.investigators.atlas import Atlas
 from backend.investigators.base import Investigator
 from backend.investigators.echo import Echo
 from backend.investigators.sherlock import Sherlock
-from backend.investigators.skeptic import NOT_REQUESTED, Skeptic
 from backend.models import IST, Evidence
 from backend.tinyfish import replay
 from backend.tinyfish.client import CallBudget, CallBudgetExceeded, TinyFishClient
@@ -70,8 +69,6 @@ def test_each_investigator_sets_its_own_name(monkeypatch):
         report = run(cls())
         assert report.investigator == cls.name
         assert all(e.investigator == cls.name for e in report.evidence)
-    report = run(Skeptic(requested=True))
-    assert report.evidence[0].investigator == "skeptic"
 
 
 def test_echo_is_always_tier3_and_unverified(monkeypatch):
@@ -105,24 +102,6 @@ def test_atlas_drops_tier3(monkeypatch):
     report = run(Atlas())
     assert [e.id for e in report.evidence] == ["ok"]
     assert "dropped blog" in report.notes
-
-
-def test_skeptic_does_not_run_unless_requested(monkeypatch):
-    def fail(*args):
-        raise AssertionError("Skeptic loaded evidence without being asked")
-    monkeypatch.setattr(replay, "load_evidence", fail)
-    report = run(Skeptic())
-    assert report.evidence == []
-    assert report.notes == NOT_REQUESTED
-
-
-def test_skeptic_requested_returns_counter_evidence():
-    assert [e.id for e in run(Skeptic(requested=True)).evidence] == ["high-hint"]
-
-
-def test_skeptic_reports_none_found():
-    move = replay.find_case("ZENITHPOLY")[1]
-    assert "none found" in run(Skeptic(requested=True), move).notes
 
 
 def test_unknown_ticker_gives_empty_report():

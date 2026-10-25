@@ -149,7 +149,9 @@ def test_one_group_is_capped_at_medium():
     assert sum(item.points for item in card.score_breakdown) == card.confidence_score
 
 
-def test_unresolved_skeptic_counter_evidence_caps_at_medium():
+def test_counter_evidence_gate_still_caps_at_medium():
+    # Gate 6 stays in the consensus engine even though no investigator produces
+    # counter-evidence any more; the engine still handles it if it arrives.
     move, evidence, _ = load_case("case_high")
     denial = make_evidence("denial", 30, investigator="skeptic",
                            claim="Company denies guidance change was material")
@@ -169,11 +171,11 @@ def test_caps_never_raise_a_label():
 
 # --- high-confidence case ----------------------------------------------------
 
-def test_high_confidence_case_scores_90():
+def test_high_confidence_case_scores_100():
     move, evidence, expected = load_case("case_high")
     card = build_card(move, evidence)
 
-    assert card.confidence_score == expected["confidence_score"] == 90
+    assert card.confidence_score == expected["confidence_score"] == 100
     assert card.confidence_label == "High"
     labels = config.RULE_LABELS
     assert {item.rule: item.points for item in card.score_breakdown} == {
@@ -183,7 +185,6 @@ def test_high_confidence_case_scores_90():
         labels["move_unusual_vs_sector_and_index"]: 15,
         labels["filing_and_media_agree"]: 10,
         labels["no_stronger_alternative"]: 10,
-        labels["partly_anticipated"]: -10,
     }
     rejected = {r.evidence.id: r.reason for r in card.rejected_evidence}
     assert rejected == {"high-broker": "became public 32 minutes after the move began"}

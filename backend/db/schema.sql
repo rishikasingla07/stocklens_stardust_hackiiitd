@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS investigations (
     id INTEGER PRIMARY KEY,
     ticker TEXT NOT NULL,
     created_at TEXT NOT NULL,   -- ISO 8601 in IST, e.g. 2026-10-24T14:05:09+05:30
-    source TEXT NOT NULL CHECK (source IN ('investigate', 'simulate', 'challenge', 'live')),
+    source TEXT NOT NULL CHECK (source IN ('investigate', 'simulate', 'live')),
     mode TEXT NOT NULL CHECK (mode IN ('replay', 'live')),
     label TEXT NOT NULL,
     score INTEGER NOT NULL,

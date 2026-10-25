@@ -23,7 +23,6 @@ INVESTIGATOR_ROLES = {
     "atlas": "Atlas (market, sector and policy news)",
     "sherlock": "Sherlock (company filings and news)",
     "echo": "Echo (crowd posts and blogs)",
-    "skeptic": "Skeptic (evidence against the cause)",
 }
 
 # Phrases that state a confidence number: "90 out of 100", "90/100", "85% confidence",
@@ -85,8 +84,9 @@ def _bullets(lines: list[str]) -> str:
 
 def _search_summary(card: Card) -> str:
     items = card.accepted_evidence + [r.evidence for r in card.rejected_evidence]
-    who = sorted({e.investigator for e in items}, key=list(INVESTIGATOR_ROLES).index)
-    roles = ", ".join(INVESTIGATOR_ROLES[i] for i in who) or "no investigator returned anything"
+    order = list(INVESTIGATOR_ROLES)
+    who = sorted({e.investigator for e in items}, key=lambda i: (order.index(i) if i in order else len(order), i))
+    roles = ", ".join(INVESTIGATOR_ROLES.get(i, i) for i in who) or "no investigator returned anything"
     return (f"Investigators with results: {roles}. {len(items)} item(s) found: "
             f"{len(card.accepted_evidence)} accepted, {len(card.rejected_evidence)} rejected. "
             f"Market check: {_move_summary(card.move)}.")
@@ -153,9 +153,7 @@ def offline_explanation(card: Card, tone: str = "plain") -> str:
             parts.append(f"{card.confidence_label} confidence ({card.confidence_score} out of 100).")
         parts.append(f"Leading explanation: {card.leading_explanation}")
         for e in card.accepted_evidence:
-            if e.investigator == "skeptic":
-                parts.append(f"Skeptic found {_source(e)}: \"{e.claim}\", public {_when(e, m, expert)}.")
-            elif e.first_public_at >= m.move_start_at:
+            if e.first_public_at >= m.move_start_at:
                 parts.append(f"{_source(e)} reported \"{e.claim}\" {_when(e, m, expert)}, "
                              "counted only as corroboration of the earlier filing.")
             else:

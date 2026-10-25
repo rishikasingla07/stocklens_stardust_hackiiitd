@@ -69,7 +69,7 @@ def test_offline_high_names_cause_and_timing(no_key):
     card = card_for("case_high")
     text = explain.explain(card)
     assert text == explain.offline_explanation(card, "plain")
-    assert "High confidence (90 out of 100)" in text
+    assert "High confidence (100 out of 100)" in text
     assert card.leading_explanation in text
     assert "14 minutes before the move began" in text
     assert "not investment advice" in text
@@ -105,7 +105,7 @@ def test_offline_text_states_no_wrong_confidence_number():
 # --- explain: LLM path -------------------------------------------------------
 
 def test_good_llm_reply_is_used(monkeypatch):
-    reply = "High confidence (90 out of 100). The company cut its guidance in a filing."
+    reply = "High confidence (100 out of 100). The company cut its guidance in a filing."
     fake_llm(monkeypatch, explain, reply)
     assert explain.explain(card_for("case_high")) == reply
 
@@ -139,7 +139,7 @@ def test_prompt_has_every_placeholder_filled(monkeypatch):
                  "move_summary", "accepted_evidence", "rejected_evidence", "alternatives",
                  "score_breakdown", "limits", "search_summary", "tone_instructions"):
         assert "{" + name + "}" not in prompt
-    assert "90 out of 100" in prompt  # tone section's own {confidence_score}
+    assert "100 out of 100" in prompt  # tone section's own {confidence_score}
     assert "retail investor" in prompt  # plain tone, not expert
 
 

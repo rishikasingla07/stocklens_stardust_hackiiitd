@@ -21,14 +21,13 @@ from backend.consensus.engine import build_card_from_reports
 from backend.investigators.atlas import Atlas
 from backend.investigators.echo import Echo
 from backend.investigators.sherlock import Sherlock
-from backend.investigators.skeptic import Skeptic
 from backend.llm.explain import NOT_ADVICE
 from backend.models import IST, Card, Move, Report
 from backend.tinyfish import replay
 from backend.tinyfish.client import TinyFishClient
 
 NOT_CONNECTED = "not connected live"
-OTHERS = ("atlas", "echo", "skeptic")
+OTHERS = ("atlas", "echo")
 
 
 class LiveDisabled(Exception):
@@ -185,12 +184,10 @@ async def _investigate(sherlock: Sherlock, move: Move, client: TinyFishClient,
     """Live Sherlock, plus replay data for the others only if the ticker has a recorded case."""
     if not replay_case:
         others = [Report(investigator=name, notes=f"{name}: {NOT_CONNECTED}") for name in OTHERS]
-        return [await sherlock.run(move), *others], "Atlas, Echo, Skeptic: not connected live"
+        return [await sherlock.run(move), *others], "Atlas, Echo: not connected live"
     investigators = [sherlock, Atlas(client, mode="replay"), Echo(client, mode="replay")]
-    if config.DEFAULT_INCLUDE_EARLIER_HINTS:
-        investigators.append(Skeptic(client, mode="replay", earlier_hints_only=True))
     reports = list(await asyncio.gather(*(i.run(move) for i in investigators)))
-    return reports, "Atlas, Echo, Skeptic: recorded replay data for this ticker (not live)"
+    return reports, "Atlas, Echo: recorded replay data for this ticker (not live)"
 
 
 def _count_calls(job: LiveJob, client: TinyFishClient) -> None:

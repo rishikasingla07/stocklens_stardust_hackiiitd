@@ -470,7 +470,7 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
   padding: 0;
   list-style: none;
 }
-@media (min-width: 760px) { .inv-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 760px) { .inv-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 .inv {
   display: grid;
@@ -830,7 +830,7 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
 }
 .rc-limits li + li { margin-top: 0.15rem; }
 
-/* --- Action bar & Skeptic ---------------------------------------------------------- */
+/* --- Action bar ---------------------------------------------------------- */
 
 .action-bar {
   display: flex;
@@ -864,35 +864,6 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
   transition: background-color 150ms var(--ease), color 150ms var(--ease);
 }
 .mode-toggle button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-
-.spinner {
-  display: none;
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 700ms linear infinite;
-}
-.is-busy .spinner { display: inline-block; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.skeptic-slot:empty { display: none; }
-.skeptic-banner {
-  padding: var(--s4) var(--s5);
-  border: 1px solid var(--border);
-  border-left: 6px solid var(--teal);
-  border-radius: var(--radius);
-  background: var(--panel);
-  animation: fade-up 300ms var(--ease);
-}
-.skeptic-banner.has-counter { border-left-color: var(--amber); }
-.skeptic-banner.is-error { border-left-color: var(--red); }
-.sk-title { font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.sk-main { margin-top: var(--s1); font-size: 1.1rem; font-weight: 700; }
-.sk-list { margin: var(--s2) 0 0; padding-left: 1.2rem; }
-.sk-sub { margin-top: var(--s2); color: var(--muted); font-size: 0.88rem; }
-.sk-change { margin-top: var(--s2); color: var(--amber); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* --- Compare cases ------------------------------------------------------------------- */
 
@@ -937,7 +908,9 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
   font-weight: 700;
 }
 .compare-ticker { grid-column: 1; font-weight: 800; letter-spacing: 0.02em; }
-.compare-desc { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; }
+.compare-desc { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.compare-card.tone-pending { --tone: var(--border); }
+.compare-card.tone-pending .compare-label { color: var(--faint); }
 
 .site-footer { padding-bottom: var(--s6); color: var(--faint); font-size: 0.78rem; }
 
@@ -1083,7 +1056,6 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
     scroll-behavior: auto !important;
   }
   .badge-flag::before, .inv.is-searching .inv-dot { animation: none !important; }
-  .spinner { animation: none !important; border-color: #fff; border-top-color: transparent; }
 }
 
 /* --- Print ------------------------------------------------------------------------- */
@@ -1108,7 +1080,7 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
   .site-header, main, .compare, .site-footer { max-width: none; padding-left: 0; padding-right: 0; }
   main { padding-top: var(--s4); }
   .panels { grid-template-columns: 1fr; }
-  .panel, .result-card, .skeptic-banner { box-shadow: none; break-inside: avoid; }
+  .panel, .result-card { box-shadow: none; break-inside: avoid; }
   .dot, .ev-num, .key, .total-fill, .result-card::before, .chart-band, .label-pill {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;

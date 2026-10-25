@@ -58,7 +58,7 @@ def test_investigate_matches_fixture_expectation(case):
 
 def test_investigate_demo_cases():
     acme = client.post("/investigate/ACMEINFRA").json()
-    assert (acme["confidence_label"], acme["confidence_score"]) == ("High", 90)
+    assert (acme["confidence_label"], acme["confidence_score"]) == ("High", 100)
     assert client.post("/investigate/ZENITHPOLY").json()["confidence_label"] == "Unknown"
     orion = client.post("/investigate/ORIONPHARMA").json()
     assert orion["leading_explanation"].startswith("Market explanation leads")
@@ -86,9 +86,9 @@ def test_unexpected_explain_error_falls_back_silently(monkeypatch):
 
 
 def test_fixture_path_is_fallback_when_pipeline_has_no_case(monkeypatch):
-    monkeypatch.setattr(app_module.pipeline, "live_card", lambda ticker, include_skeptic=False: None)
+    monkeypatch.setattr(app_module.pipeline, "live_card", lambda ticker: None)
     card = client.post("/investigate/ACMEINFRA").json()
-    assert card["confidence_score"] == 90 and card["explanation_text"].strip()
+    assert card["confidence_score"] == 100 and card["explanation_text"].strip()
 
 
 def test_investigate_is_case_insensitive():
@@ -124,21 +124,27 @@ def test_receipt_without_fixture_is_404():
     assert client.get("/receipt/TCS").status_code == 404
 
 
-def test_challenge_returns_card_with_skeptic():
-    r = client.post("/challenge/ACMEINFRA")
-    assert r.status_code == 200
-    card = r.json()
-    investigate = client.post("/investigate/ACMEINFRA").json()
-    assert card.keys() == investigate.keys()
-    assert (card["confidence_label"], card["confidence_score"]) == ("High", 90)
-    assert any(e["investigator"] == "skeptic" for e in card["accepted_evidence"])
-    assert card["explanation_text"].strip()
+def test_cases_returns_real_results_for_compare_cards():
+    rows = {r["ticker"]: r for r in client.get("/cases").json()}
+    assert (rows["ACMEINFRA"]["label"], rows["ACMEINFRA"]["score"], rows["ACMEINFRA"]["market_leads"]) == ("High", 100, False)
+    assert (rows["ZENITHPOLY"]["label"], rows["ZENITHPOLY"]["score"]) == ("Unknown", 15)
+    assert rows["ZENITHPOLY"]["leading_explanation"] is None
+    assert (rows["ORIONPHARMA"]["label"], rows["ORIONPHARMA"]["score"], rows["ORIONPHARMA"]["market_leads"]) == ("Medium", 50, True)
+    assert client.get("/history").json() == []  # reading the cases saves nothing
 
 
-def test_challenge_without_case_is_same_404_as_investigate():
-    r = client.post("/challenge/TCS")
-    assert r.status_code == 404
-    assert r.json() == client.post("/investigate/TCS").json()
+def test_cases_match_investigate_in_live_mode(monkeypatch):
+    monkeypatch.setattr(config, "MODE", "live")
+    monkeypatch.setattr(config, "TINYFISH_API_KEY", "")
+    for row in client.get("/cases").json():
+        card = client.post(f"/investigate/{row['ticker']}").json()
+        assert (card["confidence_label"], card["confidence_score"]) == (row["label"], row["score"])
+    acme = client.post("/investigate/ACMEINFRA").json()
+    assert (acme["confidence_label"], acme["confidence_score"]) == ("High", 100)
+
+
+def test_challenge_route_is_gone():
+    assert client.post("/challenge/ACMEINFRA").status_code == 404
 
 
 def test_card_source_can_be_swapped(monkeypatch):

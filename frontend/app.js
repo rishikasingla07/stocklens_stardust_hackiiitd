@@ -5,7 +5,6 @@
 
 const UNKNOWN_TEXT = "Cause not confidently identified";
 const MARKET_PREFIX = "Market explanation leads";
-const COUNTER_PREFIX = "counter-evidence: ";
 const TIER_NAMES = {
   1: "Tier 1 · Primary (exchange filing, official release)",
   2: "Tier 2 · Reputable media",
@@ -15,7 +14,6 @@ const INVESTIGATORS = [
   { id: "atlas", name: "Atlas", role: "macro" },
   { id: "sherlock", name: "Sherlock", role: "company" },
   { id: "echo", name: "Echo", role: "crowd" },
-  { id: "skeptic", name: "Skeptic", role: "against" },
 ];
 const INVESTIGATOR_LABEL = Object.fromEntries(INVESTIGATORS.map((i) => [i.id, `${i.name} (${i.role})`]));
 const COMPARE_TICKERS = ["ACMEINFRA", "ZENITHPOLY", "ORIONPHARMA"];
@@ -245,10 +243,52 @@ function stockCard(stock) {
     </div></li>`;
 }
 
+// --- Compare cases (labels from the real results) ------------------------------
+
+/** "High 100", "Unknown", "Medium 50 · Market-wide": the label a recorded case really gets. */
+function caseLabel(c) {
+  const base = c.label === "Unknown" ? "Unknown" : `${c.label} ${c.score}`;
+  return c.market_leads ? `${base} · Market-wide` : base;
+}
+
+function caseDesc(c) {
+  if (!c.leading_explanation) return UNKNOWN_TEXT;
+  // A market-led explanation reads "Market explanation leads: ... Cause: ..."; show the cause.
+  const cause = c.leading_explanation.split(" Cause: ")[1];
+  return c.market_leads && cause ? `Market-wide: ${cause}` : c.leading_explanation;
+}
+
+async function loadCases() {
+  let cases = [];
+  try {
+    cases = await api("GET", "/cases");
+  } catch {
+    // fall through: every card says its result is unavailable
+  }
+  const byTicker = Object.fromEntries(cases.map((c) => [c.ticker, c]));
+  $$(".compare-card[data-ticker]").forEach((el, i) => {
+    const c = byTicker[el.dataset.ticker];
+    const label = $(".compare-label", el);
+    const desc = $(".compare-desc", el);
+    el.classList.remove("tone-pending", "tone-high", "tone-medium", "tone-low", "tone-unknown");
+    if (!c) {
+      el.classList.add("tone-unknown");
+      label.textContent = "Result unavailable";
+      desc.textContent = "";
+      el.setAttribute("aria-label", `Compare case ${i + 1}: ${el.dataset.ticker}`);
+      return;
+    }
+    el.classList.add(`tone-${TONE[c.label] || "unknown"}`);
+    label.textContent = caseLabel(c);
+    desc.textContent = caseDesc(c);
+    el.setAttribute("aria-label", `Compare case ${i + 1}: ${caseLabel(c)}, ${c.ticker}`);
+  });
+}
+
 // --- History (saved investigations) ------------------------------------------
 
 const SOURCE_LABEL = {
-  investigate: "Investigate", simulate: "Simulate move", challenge: "Challenge This", live: "Live run",
+  investigate: "Investigate", simulate: "Simulate move", live: "Live run",
 };
 
 function relTime(iso) {
@@ -435,7 +475,7 @@ function numberedEvidence(card) {
 
 /** accepted = could be a cause; corroborating = a Tier 2 report after the move that backs a pre-move filing. */
 function acceptedKind(e, start) {
-  if (e.investigator !== "skeptic" && e.first_public_at && Date.parse(e.first_public_at) >= start) {
+  if (e.first_public_at && Date.parse(e.first_public_at) >= start) {
     return "corroborating";
   }
   return "accepted";
@@ -444,7 +484,6 @@ function acceptedKind(e, start) {
 const STATUS_LABEL = { accepted: "Accepted", corroborating: "Corroborating", rejected: "Set aside" };
 
 function keptReason(item) {
-  if (item.e.investigator === "skeptic") return "Skeptic: an earlier hint that the move was partly anticipated.";
   if (item.status === "corroborating") return "Published after the move began, so it only corroborates a filing that was public before it.";
   return "Public before the move started.";
 }
@@ -484,16 +523,13 @@ function liveChip(inv, done, n, live) {
   return ["is-dimmed", live.others ? "not connected live" : "waiting…"];
 }
 
-function stripHtml(ticker, { done = false, challenged = false, counts = null, live = null } = {}) {
+function stripHtml(ticker, { done = false, counts = null, live = null } = {}) {
   const chips = INVESTIGATORS.map((inv) => {
     const n = counts ? counts[inv.id] : null;
     let cls = "is-searching";
     let text = "searching…";
     if (live) {
       [cls, text] = liveChip(inv, done, n, live);
-    } else if (inv.id === "skeptic" && !challenged) {
-      cls = "is-dimmed";
-      text = "runs on Challenge This";
     } else if (done) {
       cls = n ? "is-found" : "is-empty";
       text = n ? `found ${plural(n, "item")}` : "found nothing";
@@ -864,24 +900,24 @@ function actionBarHtml(card, live = null, saved = null) {
       <button type="button" data-mode="expert" aria-pressed="${state.mode === "expert"}">Expert</button>
     </div>`;
   if (saved) {
-    // Receipt and Challenge This build a fresh Card, so they would not match this saved one.
+    // Evidence Receipt builds a fresh Card, so it would not match this saved one.
     const again = saved.source === "live"
       ? `<button type="button" class="btn btn-secondary" data-action="live">Run another live investigation</button>`
       : `<button type="button" class="btn btn-secondary" data-ticker-go="${esc(card.ticker)}">Run a fresh investigation</button>`;
     return `<div class="action-bar" role="group" aria-label="Investigation actions">
       ${modeToggle}
       <div class="action-buttons">
-        <p class="live-note">This is a saved result. Evidence Receipt and Challenge This work on a fresh investigation.</p>
+        <p class="live-note">This is a saved result. Evidence Receipt works on a fresh investigation.</p>
         ${again}
       </div>
     </div>`;
   }
   if (live) {
-    // Receipt and Challenge This rebuild the Card from recorded data, so they would not match a live result.
+    // Evidence Receipt rebuilds the Card from recorded data, so it would not match a live result.
     return `<div class="action-bar reveal" style="--d:600ms" role="group" aria-label="Investigation actions">
       ${modeToggle}
       <div class="action-buttons">
-        <p class="live-note">Evidence Receipt and Challenge This work on recorded investigations only.</p>
+        <p class="live-note">Evidence Receipt works on recorded investigations only.</p>
         <button type="button" class="btn btn-secondary" data-action="live">Run another live investigation</button>
       </div>
     </div>`;
@@ -889,16 +925,13 @@ function actionBarHtml(card, live = null, saved = null) {
   return `<div class="action-bar reveal" style="--d:600ms" role="group" aria-label="Investigation actions">
     ${modeToggle}
     <div class="action-buttons">
-      <button type="button" class="btn btn-secondary" data-action="receipt" data-ticker="${esc(card.ticker)}"
+      <button type="button" class="btn btn-primary" data-action="receipt" data-ticker="${esc(card.ticker)}"
         aria-label="Evidence Receipt: download JSON and open a printable page">Evidence Receipt</button>
-      <button type="button" class="btn btn-primary" data-action="challenge" data-ticker="${esc(card.ticker)}">
-        <span class="spinner" aria-hidden="true"></span><span class="btn-text">Challenge This</span></button>
     </div>
-  </div>
-  <div id="skeptic-banner" class="skeptic-slot" role="status" aria-live="polite"></div>`;
+  </div>`;
 }
 
-function renderResult(card, { animate, challenged = false, live = null, saved = null } = {}) {
+function renderResult(card, { animate, live = null, saved = null } = {}) {
   if (!saved) state.saved = null;
   const items = numberedEvidence(card);
   const axis = axisRange(card, items);
@@ -911,7 +944,7 @@ function renderResult(card, { animate, challenged = false, live = null, saved = 
   view.innerHTML = `
     ${savedBanner}
     ${trigger}
-    ${stripHtml(card.ticker, { done: true, challenged, counts: countsByInvestigator(card), live })}
+    ${stripHtml(card.ticker, { done: true, counts: countsByInvestigator(card), live })}
     <div class="result ${animate ? "animate" : ""}">
       <div class="summary reveal" style="--d:0ms">
         <h2 class="summary-ticker">${esc(card.ticker)}${name ? ` <span class="summary-name">${esc(name)}</span>` : ""}</h2>
@@ -947,7 +980,7 @@ function renderResult(card, { animate, challenged = false, live = null, saved = 
 function renderHome() {
   $("#view").innerHTML = `<section class="home">
     <h2 class="home-title">One investigation, start to finish</h2>
-    <p class="home-text">Choose a stock marked <span class="home-flag">Move flagged</span>. Four investigators gather
+    <p class="home-text">Choose a stock marked <span class="home-flag">Move flagged</span>. Three investigators gather
       evidence, only what was public before the move can count as a cause, and every point of the confidence
       score is shown.</p>
     <ol class="home-steps">
@@ -1287,63 +1320,6 @@ function downloadReceipt(ticker) {
   a.remove();
 }
 
-/** What the Skeptic found in a challenged Card: counter-evidence, else "none found". */
-function skepticBannerHtml(card, before) {
-  const counter = card.alternatives.filter((a) => a.startsWith(COUNTER_PREFIX)).map((a) => a.slice(COUNTER_PREFIX.length));
-  const counterSet = new Set(counter);
-  const hints = card.accepted_evidence.filter((e) => e.investigator === "skeptic" && !counterSet.has(e.claim));
-  const changed = before &&
-    (before.confidence_label !== card.confidence_label || before.confidence_score !== card.confidence_score);
-  const body = counter.length
-    ? `<p class="sk-main">Counter-evidence found: ${esc(plural(counter.length, "item"))} argue against this cause.</p>
-       <ul class="sk-list">${counter.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`
-    : `<p class="sk-main">None found – the answer survived the challenge.</p>`;
-  const hintLine = hints.length
-    ? `<p class="sk-sub">Earlier hint already counted: ${hints.map((e) => esc(e.claim)).join("; ")}</p>`
-    : "";
-  const change = changed
-    ? `<p class="sk-change">Confidence changed: ${esc(pillText(before))} → ${esc(pillText(card))}</p>`
-    : `<p class="sk-sub">Confidence unchanged: ${esc(pillText(card))}.</p>`;
-  return `<div class="skeptic-banner ${counter.length ? "has-counter" : "survived"}">
-    <h3 class="sk-title">Skeptic result</h3>${body}${hintLine}${change}</div>`;
-}
-
-async function challenge(ticker, button) {
-  const run = state.run;
-  const before = state.card;
-  button.disabled = true;
-  button.classList.add("is-busy");
-  $(".btn-text", button).textContent = "Challenging…";
-  const chip = $('.inv[data-inv="skeptic"]');
-  if (chip) {
-    chip.className = "inv is-searching";
-    $(".inv-state", chip).textContent = "searching…";
-  }
-  try {
-    // /challenge returns a full Card (same shape as /investigate) with the Skeptic included.
-    const card = await api("POST", `/challenge/${encodeURIComponent(ticker)}`);
-    if (run !== state.run) return;
-    state.card = card;
-    loadHistory();
-    renderResult(card, { animate: !reducedMotion(), challenged: true });
-    const slot = $("#skeptic-banner");
-    slot.innerHTML = skepticBannerHtml(card, before);
-    slot.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
-  } catch (err) {
-    if (run !== state.run) return;
-    button.disabled = false;
-    button.classList.remove("is-busy");
-    $(".btn-text", button).textContent = "Challenge This";
-    if (chip) {
-      chip.className = "inv is-dimmed";
-      $(".inv-state", chip).textContent = "runs on Challenge This";
-    }
-    $("#skeptic-banner").innerHTML = `<div class="skeptic-banner is-error">
-      <h3 class="sk-title">Challenge failed</h3>
-      <p class="sk-main">${esc(err.message)} The result above is unchanged. Try again in a moment.</p></div>`;
-  }
-}
-
 // --- Routing -----------------------------------------------------------------
 
 function go(ticker) {
@@ -1422,8 +1398,6 @@ document.addEventListener("click", (event) => {
   if (action.dataset.action === "receipt") {
     downloadReceipt(action.dataset.ticker);
     toast("Receipt downloaded. The printable version opened in a new tab.");
-  } else if (action.dataset.action === "challenge") {
-    challenge(action.dataset.ticker, action);
   } else if (action.dataset.action === "simulate") {
     simulate(state.ticker);
   } else if (action.dataset.action === "live") {
@@ -1477,6 +1451,7 @@ window.addEventListener("hashchange", route);
 applyMode();
 let stocksReady = loadStocks();
 loadHistory();
+loadCases();
 setInterval(() => {
   renderLatestChips();
   if (!$("#history-drawer").hidden) renderHistoryList();

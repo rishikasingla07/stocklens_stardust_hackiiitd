@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend import config, live_jobs, pipeline
+from backend.consensus import market_context
 from backend.consensus.engine import build_card
 from backend.db import history
 from backend.llm.explain import fill_explanation, offline_explanation
@@ -87,15 +88,14 @@ def with_explanation(card: Card) -> Card:
         return card.model_copy(update={"explanation_text": offline_explanation(card)})
 
 
-def pipeline_card(ticker: str, include_skeptic: bool = False) -> Card | None:
+def pipeline_card(ticker: str) -> Card | None:
     """Pipeline Card with explanation_text filled; the fixture path is the fallback."""
-    card = pipeline.live_card(ticker, include_skeptic=include_skeptic) or fixture_card(ticker)
+    card = pipeline.live_card(ticker) or fixture_card(ticker)
     return with_explanation(card) if card is not None else None
 
 
-# Swap points (ticker -> Card | None). The routes and frontend do not change.
+# Swap point (ticker -> Card | None). The routes and frontend do not change.
 card_source: Callable[[str], Card | None] = pipeline_card
-challenge_source: Callable[[str], Card | None] = partial(pipeline_card, include_skeptic=True)
 
 
 def save_history(card: Card, source: str, mode: str | None = None,
@@ -107,9 +107,9 @@ def save_history(card: Card, source: str, mode: str | None = None,
         log.warning("history: could not save %s card for %s (%s)", source, card.ticker, exc)
 
 
-def get_card(ticker: str, source: Callable[[str], Card | None] | None = None) -> Card:
+def get_card(ticker: str) -> Card:
     """The one place routes get a Card from. Raises 404 if no investigation exists."""
-    card = (source or card_source)(ticker.upper())
+    card = card_source(ticker.upper())
     if card is None:
         raise HTTPException(
             status_code=404,
@@ -164,6 +164,28 @@ def stocks() -> dict:
         "holdings": [_stock_row(s) for s in HOLDINGS],
         "watchlist": [_stock_row(s) for s in WATCHLIST],
     }
+
+
+@app.get("/cases")
+def cases() -> list[dict]:
+    """The recorded demo cases and their current results, for the Compare cases cards.
+
+    Built from recorded evidence through the same pipeline as /investigate, so the
+    labels always match what Investigate shows. Nothing is saved and no LLM is called.
+    """
+    rows = []
+    for ticker in FIXTURES:
+        card = pipeline.live_card(ticker) or fixture_card(ticker)
+        if card is None:
+            continue
+        rows.append({
+            "ticker": card.ticker,
+            "label": card.confidence_label,
+            "score": card.confidence_score,
+            "market_leads": market_context.analyse(card.move).market_leads,
+            "leading_explanation": card.leading_explanation,
+        })
+    return rows
 
 
 @app.post("/investigate/{ticker}")
@@ -269,14 +291,6 @@ def live_job(job_id: str) -> dict:
     return job.to_dict()
 
 
-@app.post("/challenge/{ticker}")
-def challenge(ticker: str) -> Card:
-    """Re-run the investigation with the full Skeptic. Same Card shape as /investigate."""
-    card = get_card(ticker, challenge_source)
-    save_history(card, "challenge")
-    return card
-
-
 # --- History (SQLite) --------------------------------------------------------
 
 @app.get("/history")
@@ -314,8 +328,6 @@ def _evidence_row(n: int, e: Evidence, status: str, reason: str) -> str:
 
 def _accepted_reason(e: Evidence, move: Move) -> str:
     """Why an accepted item was kept, following the timing rules in SPEC.md."""
-    if e.investigator == "skeptic":
-        return "Skeptic evidence (not held to the before-the-move rule)"
     if e.first_public_at < move.move_start_at:
         return "Public before the move started"
     return "Late Tier 2 report, counted only as corroboration of a pre-move filing"

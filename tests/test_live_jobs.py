@@ -101,7 +101,7 @@ def test_job_reaches_done_with_card(monkeypatch, tmp_path):
     assert (body["calls_used"], body["agent_calls"]) == (3, 1)
     assert len(fake.calls("agent.tinyfish.ai")) == 1
     for step in ("Searching for filings", "Reading filing 1", "Checking the timestamp",
-                 "Scoring evidence", "Atlas, Echo, Skeptic: not connected live"):
+                 "Scoring evidence", "Atlas, Echo: not connected live"):
         assert step in body["steps"]
     assert any("entered by the user" in limit for limit in card["limits"])
     assert any("TinyFish calls used: 3 of 10" in limit for limit in card["limits"])

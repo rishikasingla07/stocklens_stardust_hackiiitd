@@ -34,7 +34,6 @@ backend/
     atlas.py          Macro: did the market or sector cause this?
     sherlock.py       Company: did the company itself announce something?
     echo.py           Crowd: what is the crowd saying? (context only)
-    skeptic.py        Against: what argues against the leading cause?
   tinyfish/
     client.py         Live TinyFish API client
     replay.py         Replays recorded fixtures (offline / demo)
@@ -82,14 +81,6 @@ Investigators gather evidence only (via TinyFish). They never score or decide.
 - **Tier:** always Tier 3, always `verified=False`.
 - **Context only, never proof.**
 
-### Skeptic — against
-- **Question:** what argues against the leading cause?
-- **Does:** hunts for denials, conflicts and earlier mentions.
-- **TinyFish tools:** Search, Fetch.
-- **Runs:** in full only when the user taps **"Challenge This"**. Default
-  investigations run only its earlier-hint lookup (see Consensus assumptions).
-- **Hands over:** counter-evidence, or a clean "none found".
-
 ### TinyFish Monitor (not an investigator)
 TinyFish Monitor watches sources for new filings on held and watched stocks
 and powers **alerts** and **timing checks**. It does **not** detect price
@@ -105,7 +96,7 @@ moves; the trigger engine does that with price and volume rules.
 - `url`
 - `first_public_at` — timezone-aware datetime, IST
 - `snippet`
-- `investigator` — `atlas` | `sherlock` | `echo` | `skeptic`
+- `investigator` — `atlas` | `sherlock` | `echo`
 - `independence_group` — str or None
 - `verified` — bool
 
@@ -148,6 +139,9 @@ moves; the trigger engine does that with price and volume rules.
 | No stronger alternative explanation | +10 |
 | Partly anticipated (earlier hints) | −10 |
 
+No current investigator supplies earlier-hint evidence, so the −10 rule does
+not fire at present. It stays in place for evidence that may supply it later.
+
 Score is clamped to 0–100.
 
 ## Labels
@@ -169,7 +163,8 @@ leading explanation). They are deterministic.
 3. **Only one independence group** → cap at `Medium`.
 4. **Sector/index explains most of the move** → market explanation leads.
 5. **Evidence with missing or ambiguous timestamp** is excluded.
-6. **Unresolved Skeptic counter-evidence** → cap at `Medium`.
+6. **Unresolved counter-evidence** → cap at `Medium`. No current investigator
+   supplies counter-evidence, so this gate does not fire at present.
 
 When the label is `Unknown`, the card says "Cause not confidently identified".
 
@@ -190,8 +185,6 @@ deterministic rules built only from existing fields. Tunables are in the
   Tier 1* source that was public before the move. A card limit notes this.
   Tier 3 is never readmitted. (Needed so a filing at 09:48 plus media at
   10:20 can corroborate each other.)
-- Skeptic evidence is not held to the before-the-move rule, because a denial
-  after the move still argues against the cause. It must still pass gate 5.
 
 **Independence**
 - An existing `independence_group` is always kept.
@@ -223,20 +216,10 @@ deterministic rules built only from existing fields. Tunables are in the
 - *No stronger alternative*: there is leading evidence, no unresolved
   counter-evidence, and (when the market leads) no verified Tier 1 company
   filing.
-- **Partly anticipated**: Skeptic evidence published **before the earliest
-  leading evidence** is an earlier hint (−10). It is *not* counter-evidence.
-- **Unresolved Skeptic counter-evidence** (gate 6): every other Skeptic item.
-  The models have no "resolved" flag, so all of it counts as unresolved.
-- **Earlier hints in the default run** (`DEFAULT_INCLUDE_EARLIER_HINTS` in
-  `config.py`, default on): the "partly anticipated" −10 only exists if Skeptic
-  evidence is in the run, and the full Skeptic runs only on "Challenge This".
-  So a default investigation also runs the Skeptic's **earlier-hint lookup**:
-  it keeps only Skeptic items public **before the move started** and drops the
-  rest. That is why ACMEINFRA scores High 90 (not 100) without a challenge.
-  The full Skeptic (denials, conflicts, post-move items) still runs only on
-  "Challenge This". Edge case: a pre-move Skeptic item that is *not* earlier
-  than the leading evidence counts as counter-evidence (gate 6) even in the
-  default run. Set the flag to False to get the old default (no Skeptic at all).
+- *Partly anticipated* (−10) and gate 6 (unresolved counter-evidence) are
+  kept in the consensus engine unchanged, but only Atlas, Sherlock and Echo
+  run, and none of them produces earlier-hint or counter-evidence items. So
+  neither fires: ACMEINFRA scores High 100.
 
 **Gates**
 - Gates run in id order and only ever lower a label. When a cap lowers the

@@ -15,7 +15,7 @@ from backend import config
 from backend.models import IST, Card
 
 SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
-SOURCES = ("investigate", "simulate", "challenge", "live")
+SOURCES = ("investigate", "simulate", "live")
 MODES = ("replay", "live")
 MAX_LIMIT = 50
 LIST_COLUMNS = "id, ticker, created_at, source, mode, label, score"

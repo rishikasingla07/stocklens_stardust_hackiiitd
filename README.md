@@ -26,9 +26,8 @@ words.
    change over a window and the volume multiple pass thresholds, producing a
    `Move`.
 2. **Investigators:** Atlas (macro), Sherlock (company filings and news) and
-   Echo (crowd) gather evidence in parallel. Skeptic (counter-evidence) runs
-   in full on "Challenge This"; by default only its earlier-hint lookup runs.
-   Each investigator's tier rules are enforced in code.
+   Echo (crowd) gather evidence in parallel. Each investigator's tier rules
+   are enforced in code.
 3. **Extraction:** an LLM turns raw fetched pages into structured `Evidence`
    (claim, source, tier, timestamp, snippet).
 4. **Consensus (deterministic):** timing (public strictly before the move;
@@ -54,7 +53,7 @@ fictional; they exist only for the demo and tests.
 
 | Ticker | Result | What it shows |
 |---|---|---|
-| ACMEINFRA | **High, 90** | A Tier 1 NSE filing (guidance cut) public 14 minutes before the move, corroborated by independent Tier 2 media. A brokerage note published after the move began is rejected. An earlier management hint costs −10 ("partly anticipated"). |
+| ACMEINFRA | **High, 100** | A Tier 1 NSE filing (guidance cut) public 14 minutes before the move, corroborated by independent Tier 2 media. A brokerage note published after the move began is rejected. |
 | ZENITHPOLY | **Unknown, 15** | Nothing was public before the move: news and forum posts came after it, and a blog post has no timestamp. The card says "Cause not confidently identified" and lists why each item failed. |
 | ORIONPHARMA | **Medium, 50, market-wide** | The pharma sector fell 2.3% against the stock's 2.6%, so the sector explains about 88% of the move and the market explanation leads (gate 4). |
 
@@ -64,7 +63,6 @@ investigation available". Or call the API directly:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/investigate/ACMEINFRA
-curl -X POST http://127.0.0.1:8000/challenge/ACMEINFRA   # same Card, full Skeptic
 curl "http://127.0.0.1:8000/receipt/ACMEINFRA?format=html"
 ```
 
@@ -100,12 +98,12 @@ pytest
 |---|---|
 | Consensus engine, scoring, six hard gates, tests | Done |
 | Trigger engine (price and volume rules) and market data | Done, on recorded market data: it sets the "Move flagged" alerts on My Stocks and runs behind the Simulate move button. The plain Investigate path still takes its move from the recorded case file |
-| API, Evidence Receipt, Challenge This | Done |
+| API, Evidence Receipt | Done |
 | Website (My Stocks, Investigation Card, Evidence Timeline, Plain/Expert) | Done |
 | History: every Card saved to SQLite, reopened from the History drawer without re-running | Done |
 | Explanations | Done: offline template; optional LLM version built, not tested live |
-| Run live investigation (Sherlock live via TinyFish search, fetch, agent) | Built and being tested. Needs `STOCKLENS_MODE=live` and a TinyFish key; the move numbers are entered by the user, not taken from market data. Atlas, Echo and Skeptic are not connected live (recorded data only for the demo tickers) |
-| Atlas, Echo and Skeptic live, TinyFish Monitor, live market data | Not built yet |
+| Run live investigation (Sherlock live via TinyFish search, fetch, agent) | Built and being tested. Needs `STOCKLENS_MODE=live` and a TinyFish key; the move numbers are entered by the user, not taken from market data. Atlas and Echo are not connected live (recorded data only for the demo tickers) |
+| Atlas and Echo live, TinyFish Monitor, live market data | Not built yet |
 | Broker connect, mobile alerts, Hindi, embeddable API | Roadmap |
 
 The three demo cases (ACMEINFRA High, ZENITHPOLY Unknown, ORIONPHARMA
@@ -119,7 +117,6 @@ Overall: about 80% of the hackathon demo scope and about 40% of the full vision.
 - Start the app (see [Run](#run)) and open http://127.0.0.1:8000/.
 - Click a stock marked "Move flagged" (or press 1, 2 or 3) to see a recorded investigation.
 - With a flagged stock selected, press **Simulate move** to watch the trigger engine flag the move from recorded prices.
-- Press **Challenge This** to run the full Skeptic against the result.
 - Open **History** to reopen any saved result exactly as it was.
 - Live: set `STOCKLENS_MODE=live` and `TINYFISH_API_KEY` in `.env`, restart, then press **Run live investigation** (uses TinyFish credits, at most 10 calls per run).
 
@@ -127,7 +124,7 @@ Overall: about 80% of the hackathon demo scope and about 40% of the full vision.
 
 - `backend/config.py` — every tunable (scoring, label cut-offs, tiers, MODE, gates)
 - `backend/models.py` — Evidence, Move, Report, Card
-- `backend/investigators/` — Atlas (macro: market/sector cause), Sherlock (company: NSE/BSE filings and company news), Echo (crowd: Tier 3, context only), Skeptic (against: runs on "Challenge This")
+- `backend/investigators/` — Atlas (macro: market/sector cause), Sherlock (company: NSE/BSE filings and company news), Echo (crowd: Tier 3, context only)
 - `backend/trigger/` — detects unusual moves with price and volume rules only (no AI): percent change over a window and volume multiple must pass thresholds; creates the Move and starts the investigation. TinyFish Monitor is separate: it watches sources for new filings on held and watched stocks for alerts and timing checks, and does not detect price moves
 - `backend/tinyfish/` — evidence acquisition only (live client + replay)
 - `backend/consensus/` — deterministic timing, independence, market context, scoring, gates

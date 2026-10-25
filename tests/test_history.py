@@ -31,7 +31,7 @@ def test_investigate_saves_and_list_returns_it(monkeypatch):
     card = client.post("/investigate/ACMEINFRA").json()
     [row] = client.get("/history").json()
     assert (row["ticker"], row["source"], row["mode"]) == ("ACMEINFRA", "investigate", "replay")
-    assert (row["label"], row["score"]) == (card["confidence_label"], card["confidence_score"]) == ("High", 90)
+    assert (row["label"], row["score"]) == (card["confidence_label"], card["confidence_score"]) == ("High", 100)
     assert row["created_at"].endswith("+05:30")  # IST
     assert "card_json" not in row
 
@@ -40,9 +40,9 @@ def test_every_source_is_saved(monkeypatch):
     offline(monkeypatch)
     client.post("/investigate/ZENITHPOLY")
     client.post("/simulate/ORIONPHARMA")
-    client.post("/challenge/ACMEINFRA")
+    client.post("/investigate/ACMEINFRA")
     sources = [(r["ticker"], r["source"]) for r in client.get("/history").json()]
-    assert sources == [("ACMEINFRA", "challenge"), ("ORIONPHARMA", "simulate"),
+    assert sources == [("ACMEINFRA", "investigate"), ("ORIONPHARMA", "simulate"),
                        ("ZENITHPOLY", "investigate")]  # newest first
 
 

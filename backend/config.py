@@ -74,7 +74,7 @@ GATES = [
     {"id": 5, "name": "missing_or_ambiguous_timestamp", "effect": "exclude", "label": None,
      "description": "Evidence with missing or ambiguous timestamp is excluded."},
     {"id": 6, "name": "unresolved_skeptic_counter", "effect": "cap", "label": "Medium",
-     "description": "Unresolved Skeptic counter-evidence -> cap at Medium."},
+     "description": "Unresolved counter-evidence -> cap at Medium."},
 ]
 
 # --- Consensus engine tunables (backend/consensus/) -------------------------
@@ -162,12 +162,6 @@ EXCHANGE_FILING_DOMAINS = ("nseindia.com", "bseindia.com")
 
 # Replay mode reads fixtures/<case>/<this folder>/<investigator>.json.
 REPLAY_SUBDIR = "tinyfish"
-
-# Default investigations (no "Challenge This") also run the Skeptic's
-# earlier-hint lookup: Skeptic items public before the move started. These
-# score "partly anticipated" (-10), so ACMEINFRA is High 90, not 100. The full
-# Skeptic (counter-evidence) still runs only on "Challenge This".
-DEFAULT_INCLUDE_EARLIER_HINTS = True
 
 # Investigators that really go live when MODE == "live". Every other
 # investigator keeps reading replay fixtures, even in live mode.

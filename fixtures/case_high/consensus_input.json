@@ -1,5 +1,5 @@
 {
-  "description": "Company-specific guidance cut filed before the move. Expected: High, 90. Fictional company and outlets, for demos and tests only.",
+  "description": "Company-specific guidance cut filed before the move. Expected: High, 100. Fictional company and outlets, for demos and tests only.",
   "move": {
     "ticker": "ACMEINFRA",
     "move_start_at": "2026-10-22T10:02:00+05:30",
@@ -42,22 +42,11 @@
       "first_public_at": "2026-10-22T10:34:00+05:30",
       "claim": "Brokerage downgrades ACME Infra to Sell after guidance cut",
       "snippet": "We downgrade to SELL, cutting our target price by 18% after the guidance revision."
-    },
-    {
-      "id": "high-hint",
-      "investigator": "skeptic",
-      "source_tier": 2,
-      "verified": true,
-      "source_name": "India Biz Wire",
-      "url": "https://indiabizwire.example/acme-infra-investor-call",
-      "first_public_at": "2026-10-15T16:10:00+05:30",
-      "claim": "ACME Infra management hinted at slower order execution on investor call",
-      "snippet": "Management said execution on a couple of large orders was 'running slower than we would like' this quarter."
     }
   ],
   "expected": {
     "confidence_label": "High",
-    "confidence_score": 90,
+    "confidence_score": 100,
     "market_leads": false
   }
 }
