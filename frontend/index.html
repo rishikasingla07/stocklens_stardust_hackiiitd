@@ -59,8 +59,12 @@
         </span>
       </a>
       <div class="header-meta">
-        <button type="button" class="btn btn-secondary btn-small btn-simulate" id="simulate-btn"
-          data-action="simulate" disabled title="Select a stock first">Simulate move</button>
+        <span class="simulate-group">
+          <button type="button" class="btn btn-secondary btn-small btn-simulate" id="simulate-btn"
+            data-action="simulate" disabled title="Select a stock first"
+            aria-describedby="simulate-hint">Simulate move</button>
+          <span class="simulate-hint" id="simulate-hint" aria-live="polite">Select a stock, then simulate its move</span>
+        </span>
         <button type="button" class="btn btn-secondary btn-small btn-live" data-action="live"
           title="Search real NSE/BSE filings with TinyFish (uses credits)">Run live investigation</button>
         <button type="button" class="btn btn-secondary btn-small btn-history" data-action="history"

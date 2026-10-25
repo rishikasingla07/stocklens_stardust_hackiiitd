@@ -472,6 +472,14 @@ function updateSimulateButton() {
   btn.title = !state.ticker ? "Select a stock first"
     : uncovered ? `${NO_DEMO_COVERAGE} for ${state.ticker}`
       : `Run the trigger engine on ${state.ticker}'s recorded prices`;
+  const hint = $("#simulate-hint");
+  if (hint) {
+    const text = busy ? "Checking price and volume…"
+      : !state.ticker ? "Select a stock, then simulate its move"
+        : uncovered ? `${NO_DEMO_COVERAGE} for ${state.ticker}`
+          : `Run the trigger engine on ${state.ticker}'s recorded prices`;
+    if (hint.textContent !== text) hint.textContent = text; // only changes are announced
+  }
 }
 
 // --- Evidence model ------------------------------------------------------------

@@ -314,6 +314,14 @@ main { padding-top: var(--s6); padding-bottom: var(--s6); scroll-margin-top: var
 .btn-simulate[disabled] { cursor: not-allowed; opacity: 0.5; }
 .btn-simulate.is-busy { cursor: progress; opacity: 0.85; }
 
+/* Helper text beside Simulate move: one line on desktop, wraps under the button on phones. */
+.simulate-group { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; max-width: 100%; }
+.simulate-hint { color: var(--muted); font-size: 0.8rem; line-height: 1.3; white-space: nowrap; }
+@media (max-width: 640px) {
+  .simulate-group { flex-wrap: wrap; flex-basis: 100%; }
+  .simulate-hint { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+}
+
 .tag {
   display: inline-flex;
   padding: 0.15rem 0.6rem;
